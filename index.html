@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Crawler Results</title>
+    <link rel="stylesheet" href="stylesheet.css">
+  </head>
+  
+  <body>
+    <h1>Overview</h1>
+    <p>
+      The GPC Web Crawler analyzes websites' compliance with
+      <a href="https://globalprivacycontrol.org/" target="_blank">Global Privacy Control (GPC)</a> at scale.
+      GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
+      The GPC Web Crawler is based on
+      <a href="https://www.selenium.dev/" target="_blank">Selenium</a> and the
+      <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension" target="_blank">OptMeowt Analysis extension</a>.
+      To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
+    </p>
+    <h2>Track Compliance Evolution Over Time</h2>
+
+    <h2>Chart Mode</h2>
+    <label for="chartModeSelect">Chart Mode:</label>
+    <select id="chartModeSelect">
+      <option value="single-state">Single State</option>
+      <option value="multi-state">Multi-State</option>
+    </select>
+
+    <h2>Single State Controls</h2>
+    <label for="stateSelectSingle">Select State:</label>
+    <select id="stateSelectSingle">
+      <option value="Connecticut">Connecticut</option>
+      <option value="Colorado">Colorado</option>
+      <option value="California">California</option>
+    </select>
+
+    <h2>Multi-State Controls</h2>
+    <label for="chartTypeSelect">Select Chart Type:</label>
+    <select id="chartTypeSelect">
+      <option value="line">Line Chart</option>
+      <option value="bar">Bar Chart</option>
+    </select>
+
+    <h3>Select  States to Track:</h3>
+    <input type="checkbox" id="ct" value="Connecticut"><label for="ct">Connecticut</label>
+    <input type="checkbox" id="co" value="Colorado"><label for="co">Colorado</label>
+    <input type="checkbox" id="ca" value="California"><label for="ca">California<br></label> 
+    <br>
+    <h3>Select Metrics to Track:</h3>
+    <input type="checkbox" id="NullSites"><label for="NullSites">Null Sites</label>
+    <input type="checkbox" id="PotentiallyNonCompliantSites"><label for="PotentiallyNonCompliantSites">Potentially Non Compliant Sites</label>
+    <input type="checkbox" id="Invalid_uspapi"><label for="Invalid_uspapi">Invalid_uspapi</label>
+    <input type="checkbox" id="Invalid_usp_cookies"><label for="Invalid_usp_cookies">Invalid_usp_cookies</label>
+    <input type="checkbox" id="uspapi"><label for="uspapi">uspapi</label>
+    <input type="checkbox" id="usp_cookies"><label for="usp_cookies">usp_cookies</label>
+    <input type="checkbox" id="MissingAfter_uspapi"><label for="MissingAfter_uspapi">MissingAfter_uspapi</label>
+    <input type="checkbox" id="MissingAfter_usp_cookies"><label for="MissingAfter_usp_cookies">MissingAfter_usp_cookies</label>
+    <input type="checkbox" id="Invalid_GPPString"><label for="Invalid_GPPString">Invalid_GPPString</label>
+    <input type="checkbox" id="SaleOptOut_USNAT"><label for="SaleOptOut_USNAT">SaleOptOut_USNAT</label>
+    <input type="checkbox" id="SharingOptOut_USNAT"><label for="SharingOptOut_USNAT">SharingOptOut_USNAT</label>
+    <input type="checkbox" id="TargetedAdvertisingOptOut_USNAT"><label for="TargetedAdvertisingOptOut_USNAT">TargetedAdvertisingOptOut_USNAT</label>
+    <input type="checkbox" id="SaleOptOut_State"><label for="SaleOptOut_State">SaleOptOut_State</label>
+    <input type="checkbox" id="SharingOptOut_State"><label for="SharingOptOut_State">SharingOptOut_State</label>
+    <input type="checkbox" id="TargetedAdvertisingOptOut_State"><label for="TargetedAdvertisingOptOut_State">TargetedAdvertisingOptOut_State</label>
+    <input type="checkbox" id="MissingAfterGPPString"><label for="MissingAfterGPPString">MissingAfterGPPString</label>
+    <input type="checkbox" id="Invalid_OptanonConsent"><label for="Invalid_OptanonConsent">Invalid_OptanonConsent</label>
+    <input type="checkbox" id="OptanonConsent"><label for="OptanonConsent">OptanonConsent</label>
+    <input type="checkbox" id="MissingAfterOptanonConsent"><label for="MissingAfterOptanonConsent">MissingAfterOptanonConsent</label>
+    <input type="checkbox" id="WellKnown"><label for="WellKnown">Well-Known</label>
+    <input type="checkbox" id="Invalid_WellKnown"><label for="Invalid_WellKnown">Invalid_Well-Known</label>
+    <input type="checkbox" id="SegmentSwitchGPP"><label for="SegmentSwitchGPP">SegmentSwitchGPP</label>
+    
+
+    <h2>State, Month, and Filter</h2>
+    <select id="stateSelect" onchange="updateMonths()">
+        <option></option>
+        <option value="Connecticut">Connecticut</option>
+        <option value="Colorado">Colorado</option>
+        <option value="California">California</option>
+      </select>
+
+      <label for="monthSelect">Select Month:</label>
+      <select id="monthSelect">
+        <option></option>
+        <option>FebMar2025</option>
+        <option>May2025</option>
+      </select>
+
+
+    <label for="filterSelect">Select Filter:</label>
+    <select id="filterSelect">
+    <option></option>
+      <option>All Data</option>
+      <option>Potentially Non Compliant Sites</option>
+      <option>Null Sites</option>
+    </select>
+
+
+    <h2>Reason Filters</h2>
+    <div id="reasonFilters" style="display:none;">
+    <button class="toggle-btn">Select All</button>
+    <button class="toggle-btn">Invalid_uspapi</button>
+    <button class="toggle-btn">Invalid_usp_cookies</button>
+    <button class="toggle-btn">uspapi</button>
+    <button class="toggle-btn">usp_cookies</button>
+    <button class="toggle-btn">MissingAfter_uspapi</button>
+    <button class="toggle-btn">MissingAfter_usp_cookies</button>
+    <button class="toggle-btn">Invalid_GPPString</button>
+    <button class="toggle-btn">SaleOptOut_USNAT</button>
+    <button class="toggle-btn">SharingOptOut_USNAT</button>
+    <button class="toggle-btn">TargetedAdvertisingOptOut_USNAT</button>
+    <button class="toggle-btn">SaleOptOut_State</button>
+    <button class="toggle-btn">SharingOptOut_State</button>
+    <button class="toggle-btn">TargetedAdvertisingOptOut_State</button>
+    <button class="toggle-btn">MissingAfterGPPString</button>
+    <button class="toggle-btn">Invalid_OptanonConsent</button>
+    <button class="toggle-btn">OptanonConsent</button>
+    <button class="toggle-btn">MissingAfterOptanonConsent</button>
+    <button class="toggle-btn">WellKnown</button>
+    <button class="toggle-btn">Invalid_WellKnown</button>
+    <button class="toggle-btn">SegmentSwitchGPP</button>
+    </div>
+
+    <h2>Navigation</h2>
+    <button id="prevBtn">Prev</button>
+    <button id="nextBtn">Next</button>
+
+
+    <script>
+        function updateMonths() {
+          const state = document.getElementById("stateSelect").value;
+          const monthSelect = document.getElementById("monthSelect");
+        
+          // Clear existing options
+          monthSelect.innerHTML = "";
+        
+          // Default empty option
+          const emptyOption = document.createElement("option");
+          monthSelect.appendChild(emptyOption);
+        
+          if (state === "California") {
+            ["Dec2023","Feb2024","Apr2024","Jun2024","FebMar2025", "May2025", "Dec2023"].forEach(month => {
+              const opt = document.createElement("option");
+              opt.textContent = month;
+              monthSelect.appendChild(opt);
+            });
+          } else {
+            ["FebMar2025", "May2025"].forEach(month => {
+              const opt = document.createElement("option");
+              opt.textContent = month;
+              monthSelect.appendChild(opt);
+            });
+          }
+        }
+
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.textContent === "Select All") {
+        // Toggle all
+        const makeActive = !btn.classList.contains('active');
+        document.querySelectorAll('.toggle-btn').forEach(b => {
+          if (b.textContent !== "Select All") {
+            b.classList.toggle('active', makeActive);
+          }
+        });
+        btn.classList.toggle('active', makeActive);
+      } else {
+        // Toggle individual
+        btn.classList.toggle('active');
+      }
+    });
+  });
+  document.getElementById("filterSelect").addEventListener("change", function () {
+    const reasonFilters = document.getElementById("reasonFilters");
+    if (this.value === "Potentially Non Compliant Sites") {
+      reasonFilters.style.display = "block";
+    } else {
+      reasonFilters.style.display = "none";
+    }
+  });
+        </script>
+  </body>
+</html>
+
+
+
+
+
+</html>
