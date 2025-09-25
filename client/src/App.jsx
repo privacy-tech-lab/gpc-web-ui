@@ -10,27 +10,43 @@ function App() {
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
-  const datasets = useMemo(
+  const timePeriods = useMemo(
     () => [
-      {
-        key: "all",
-        label: "All data",
-        path: "/Crawl_Data_CA - May2025.csv",
-      },
-      {
-        key: "null",
-        label: "Null sites",
-        path: "/Crawl_Data_CA - NullSitesMay2025.csv",
-      },
-      {
-        key: "pnc",
-        label: "Potentially non-compliant",
-        path: "/Crawl_Data_CA - PotentiallyNonCompliantSitesMay2025.csv",
-      },
+      { key: "Dec2023", label: "December 2023" },
+      { key: "Feb2024", label: "February 2024" },
+      { key: "Apr2024", label: "April 2024" },
+      { key: "Jun2024", label: "June 2024" },
+      { key: "FebMar2025", label: "Feb-Mar 2025" },
+      { key: "May2025", label: "May 2025" },
     ],
     []
   );
-  const [selectedDataset, setSelectedDataset] = useState("all");
+
+  const dataTypes = useMemo(
+    () => [
+      { key: "all", label: "All data" },
+      { key: "null", label: "Null sites" },
+      { key: "pnc", label: "Potentially non-compliant" },
+    ],
+    []
+  );
+
+  const [selectedTimePeriod, setSelectedTimePeriod] = useState("May2025");
+  const [selectedDataType, setSelectedDataType] = useState("all");
+
+  const getFilePath = useMemo(() => {
+    const buildPath = (period, type) => {
+      if (type === "all") {
+        return `/Crawl_Data_CA - ${period}.csv`;
+      } else if (type === "null") {
+        return `/Crawl_Data_CA - NullSites${period}.csv`;
+      } else if (type === "pnc") {
+        return `/Crawl_Data_CA - PotentiallyNonCompliantSites${period}.csv`;
+      }
+      return `/Crawl_Data_CA - ${period}.csv`;
+    };
+    return buildPath(selectedTimePeriod, selectedDataType);
+  }, [selectedTimePeriod, selectedDataType]);
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [showFilters, setShowFilters] = useState(true);
 
@@ -65,8 +81,7 @@ function App() {
   useEffect(() => {
     function loadData() {
       // Load CSV from the public folder using Papa directly (no manual fetch)
-      const ds = datasets.find((d) => d.key === selectedDataset) || datasets[0];
-      const publicCsvPath = ds.path;
+      const publicCsvPath = getFilePath;
       setCsvUrl(`public:${publicCsvPath}`);
       setLoading(true);
       setError("");
@@ -109,7 +124,7 @@ function App() {
     }
 
     loadData();
-  }, [selectedDataset, datasets]);
+  }, [selectedTimePeriod, selectedDataType, getFilePath]);
 
   const displayHeaders = useMemo(() => {
     if (headers.length > 0) return headers;
@@ -144,18 +159,18 @@ function App() {
   );
 
   const reasonOptions = useMemo(() => {
-    if (selectedDataset !== "pnc") return [];
+    if (selectedDataType !== "pnc") return [];
     return pncReasonList;
-  }, [selectedDataset, pncReasonList]);
+  }, [selectedDataType, pncReasonList]);
 
   const filteredRows = useMemo(() => {
-    if (selectedDataset !== "pnc") return rows;
+    if (selectedDataType !== "pnc") return rows;
     if (!selectedReasons || selectedReasons.length === 0) return rows;
     return rows.filter((row) => {
       const reasons = parseReasons(row?.Reasons_Non_Compliant);
       return reasons.some((r) => selectedReasons.includes(r));
     });
-  }, [rows, selectedDataset, selectedReasons]);
+  }, [rows, selectedDataType, selectedReasons]);
 
   const totalItems = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -189,24 +204,40 @@ function App() {
     <div className="app-container">
       <h1>CA Data Table</h1>
       <div className="controls">
-        <label htmlFor="dataset-select">Dataset:</label>
+        <label htmlFor="time-period-select">Time Period:</label>
         <select
-          id="dataset-select"
-          value={selectedDataset}
+          id="time-period-select"
+          value={selectedTimePeriod}
           onChange={(e) => {
-            setSelectedDataset(e.target.value);
+            setSelectedTimePeriod(e.target.value);
             setCurrentPage(1);
           }}
         >
-          {datasets.map((d) => (
-            <option key={d.key} value={d.key}>
-              {d.label}
+          {timePeriods.map((period) => (
+            <option key={period.key} value={period.key}>
+              {period.label}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="data-type-select">Data Type:</label>
+        <select
+          id="data-type-select"
+          value={selectedDataType}
+          onChange={(e) => {
+            setSelectedDataType(e.target.value);
+            setCurrentPage(1);
+          }}
+        >
+          {dataTypes.map((type) => (
+            <option key={type.key} value={type.key}>
+              {type.label}
             </option>
           ))}
         </select>
       </div>
 
-      {selectedDataset === "pnc" && (
+      {selectedDataType === "pnc" && (
         <div id="reason-filters" className="compact-filters">
           <div className="filter-header">
             <h3>
