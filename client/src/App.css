@@ -1,0 +1,317 @@
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  text-align: center;
+  color: #333;
+  background: #f7f9fb;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  max-width: 1400px;
+}
+
+.app-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+  text-align: left;
+}
+
+h1,
+h2,
+h3 {
+  text-align: center;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 0.5em;
+}
+
+p {
+  text-align: center;
+  margin-bottom: 1em;
+  color: #555;
+  margin: 0 40px;
+}
+
+a {
+  color: #007acc;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: #005f99;
+  text-decoration: underline;
+}
+
+/* ---------------------------
+     Container & Controls
+  --------------------------- */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.controls label {
+  font-weight: 500;
+  margin-right: 5px;
+}
+
+select,
+button {
+  padding: 8px 14px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  outline: none;
+  transition: all 0.2s;
+}
+
+select:hover,
+button:hover {
+  border-color: #007acc;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+button {
+  background-color: #007acc;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 500;
+  border: none;
+}
+
+button:hover {
+  background-color: #005f99;
+}
+
+.toggle-btn {
+  margin: 4px;
+  padding: 6px 12px;
+  border: 1px solid #888;
+  border-radius: 4px;
+  background-color: #007acc;
+  cursor: pointer;
+}
+
+.toggle-btn.active {
+  background-color: #4caf50; /* green */
+  color: white;
+  border-color: #4caf50;
+}
+
+/* ---------------------------
+     Pager / Status Bar
+  --------------------------- */
+#pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 70%;
+  margin: 15px auto;
+  font-size: 14px;
+  color: #444;
+}
+
+#pager button {
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 5px;
+}
+
+/* ---------------------------
+     Table Styles
+  --------------------------- */
+#table-wrapper {
+  margin-bottom: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+th,
+td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+th {
+  background-color: #f2f6fa;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-weight: 600;
+  color: #333;
+  text-align: left;
+}
+
+td {
+  color: #555;
+}
+
+tr:hover {
+  background-color: #f0f7ff;
+  cursor: default;
+}
+
+/* Non-compliant reason cells */
+td.Reasons_Non_Compliant {
+  color: #d9534f;
+  font-weight: 500;
+}
+
+/* ---------------------------
+      Compact Reason Filters
+    --------------------------- */
+.compact-filters {
+  margin-bottom: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.filter-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.toggle-filters-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #007acc;
+  background-color: #007acc;
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.toggle-filters-btn:hover {
+  background-color: #005f99;
+  border-color: #005f99;
+}
+
+.filter-content {
+  padding: 16px;
+}
+
+.filter-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.compact-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  color: #333;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.compact-btn:hover {
+  border-color: #007acc;
+  background-color: #e6f0fa;
+  color: #007acc;
+}
+
+.compact-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reason-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+
+.reason-filter-btn {
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background-color: #fff;
+  color: #555;
+  cursor: pointer;
+  font-weight: 400;
+  transition: all 0.2s;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reason-filter-btn:hover {
+  border-color: #007acc;
+  background-color: #f8f9fa;
+  color: #007acc;
+}
+
+.reason-filter-btn.active {
+  background-color: #007acc;
+  border-color: #007acc;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* ---------------------------
+     Responsive Enhancements
+  --------------------------- */
+@media screen and (max-width: 1000px) {
+  #table-wrapper {
+    width: 95%;
+  }
+  table {
+    min-width: 600px;
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  select,
+  button {
+    width: 100%;
+  }
+}
