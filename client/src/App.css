@@ -141,6 +141,13 @@ button:hover {
   transition: all 0.3s ease;
 }
 
+#table-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
