@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import "./App.css";
+import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 
 function App() {
-  const [csvUrl, setCsvUrl] = useState("");
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,7 @@ function App() {
 
   const [selectedTimePeriod, setSelectedTimePeriod] = useState("May2025");
   const [selectedDataType, setSelectedDataType] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const getFilePath = useMemo(() => {
     const buildPath = (period, type) => {
@@ -82,7 +83,6 @@ function App() {
     function loadData() {
       // Load CSV from the public folder using Papa directly (no manual fetch)
       const publicCsvPath = getFilePath;
-      setCsvUrl(`public:${publicCsvPath}`);
       setLoading(true);
       setError("");
       setHeaders([]);
@@ -151,8 +151,8 @@ function App() {
       "Invalid_OptanonConsent",
       "OptanonConsent",
       "MissingAfterOptanonConsent",
-      "WellKnown",
-      "Invalid_WellKnown",
+      "Well-Known",
+      "Invalid_Well-Known",
       "SegmentSwitchGPP",
     ],
     []
@@ -164,13 +164,29 @@ function App() {
   }, [selectedDataType, pncReasonList]);
 
   const filteredRows = useMemo(() => {
-    if (selectedDataType !== "pnc") return rows;
-    if (!selectedReasons || selectedReasons.length === 0) return rows;
-    return rows.filter((row) => {
-      const reasons = parseReasons(row?.Reasons_Non_Compliant);
-      return reasons.some((r) => selectedReasons.includes(r));
-    });
-  }, [rows, selectedDataType, selectedReasons]);
+    let base = rows;
+    if (
+      selectedDataType === "pnc" &&
+      selectedReasons &&
+      selectedReasons.length > 0
+    ) {
+      base = base.filter((row) => {
+        const reasons = parseReasons(row?.Reasons_Non_Compliant);
+        return reasons.some((r) => selectedReasons.includes(r));
+      });
+    }
+    const q = String(searchQuery || "")
+      .trim()
+      .toLowerCase();
+    if (q.length > 0) {
+      base = base.filter((row) =>
+        String(row?.["Site URL"] ?? "")
+          .toLowerCase()
+          .includes(q)
+      );
+    }
+    return base;
+  }, [rows, selectedDataType, selectedReasons, searchQuery]);
 
   const totalItems = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
@@ -182,27 +198,11 @@ function App() {
     [filteredRows, startIndex, endIndex]
   );
 
-  if (loading) {
-    return (
-      <div style={{ padding: 16 }}>
-        <h1>Loading CSV…</h1>
-        <p>Fetching configuration and data.</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{ padding: 16 }}>
-        <h1>Error</h1>
-        <pre>{error}</pre>
-      </div>
-    );
-  }
-
   return (
     <div className="app-container">
-      <h1>CA Data Table</h1>
+      <h1>CA Crawl Data</h1>
+      <ReasonTrendsChart />
+      <h2>Filter GPC Web Crawler Data</h2>
       <div className="controls">
         <label htmlFor="time-period-select">Time Period:</label>
         <select
@@ -235,6 +235,18 @@ function App() {
             </option>
           ))}
         </select>
+        <label htmlFor="url-search">Search URL:</label>
+        <input
+          id="url-search"
+          type="text"
+          placeholder="e.g., example.com or https://..."
+          value={searchQuery}
+          onChange={(e) => {
+            setCurrentPage(1);
+            setSearchQuery(e.target.value);
+          }}
+          style={{ minWidth: 260 }}
+        />
       </div>
 
       {selectedDataType === "pnc" && (
@@ -304,7 +316,21 @@ function App() {
         </div>
       )}
 
-      {filteredRows.length === 0 ? (
+      {loading ? (
+        <div id="table-wrapper">
+          <div style={{ padding: 16 }}>
+            <h2>Loading CSV…</h2>
+            <p>Fetching configuration and data.</p>
+          </div>
+        </div>
+      ) : error ? (
+        <div id="table-wrapper">
+          <div style={{ padding: 16, color: "#b00020" }}>
+            <h2>Error</h2>
+            <pre>{error}</pre>
+          </div>
+        </div>
+      ) : filteredRows.length === 0 ? (
         <p>No data rows.</p>
       ) : (
         <div id="table-wrapper">
