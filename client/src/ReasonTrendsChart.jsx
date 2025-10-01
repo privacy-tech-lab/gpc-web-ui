@@ -56,6 +56,7 @@ const MONTHS = [
   { key: "Jun2024", label: "June 2024" },
   { key: "FebMar2025", label: "Feb-Mar 2025" },
   { key: "May2025", label: "May 2025" },
+  { key: "August2025", label: "August 2025" },
 ];
 
 const COLOR_PALETTE = [
