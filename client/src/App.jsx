@@ -18,6 +18,7 @@ function App() {
       { key: "Jun2024", label: "June 2024" },
       { key: "FebMar2025", label: "Feb-Mar 2025" },
       { key: "May2025", label: "May 2025" },
+      { key: "August2025", label: "August 2025" },
     ],
     []
   );
@@ -239,7 +240,7 @@ function App() {
         <input
           id="url-search"
           type="text"
-          placeholder="e.g., example.com or https://..."
+          placeholder="e.g., example.com"
           value={searchQuery}
           onChange={(e) => {
             setCurrentPage(1);
