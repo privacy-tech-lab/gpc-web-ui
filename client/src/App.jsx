@@ -39,13 +39,13 @@ function App() {
   const getFilePath = useMemo(() => {
     const buildPath = (period, type) => {
       if (type === "all") {
-        return `/Crawl_Data_CA - ${period}.csv`;
+        return `CA/Crawl_Data_CA - ${period}.csv`;
       } else if (type === "null") {
-        return `/Crawl_Data_CA - NullSites${period}.csv`;
+        return `CA/Crawl_Data_CA - NullSites${period}.csv`;
       } else if (type === "pnc") {
-        return `/Crawl_Data_CA - PotentiallyNonCompliantSites${period}.csv`;
+        return `CA/Crawl_Data_CA - PotentiallyNonCompliantSites${period}.csv`;
       }
-      return `/Crawl_Data_CA - ${period}.csv`;
+      return `CA/Crawl_Data_CA - ${period}.csv`;
     };
     return buildPath(selectedTimePeriod, selectedDataType);
   }, [selectedTimePeriod, selectedDataType]);
@@ -201,7 +201,29 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1>CA Crawl Data</h1>
+      <h1>GPC Crawl Data</h1>
+
+      <p>
+        The GPC Web Crawler analyzes websites' compliance with{" "}
+        <a href="https://globalprivacycontrol.org/" target="_blank">
+          Global Privacy Control (GPC)
+        </a>{" "}
+        at scale. GPC is a privacy preference signal that people can use to
+        exercise their rights to opt out from web tracking. The GPC Web Crawler
+        is based on{" "}
+        <a href="https://www.selenium.dev/" target="_blank">
+          Selenium
+        </a>{" "}
+        and the{" "}
+        <a
+          href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension"
+          target="_blank"
+        >
+          OptMeowt Analysis extension
+        </a>
+        . To track the evolution of GPC compliance on the web over time we are
+        performing regular crawls of a set of 11,708 websites.
+      </p>
       <ReasonTrendsChart />
       <h2>Filter GPC Web Crawler Data</h2>
       <div className="controls">

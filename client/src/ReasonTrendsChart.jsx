@@ -59,6 +59,13 @@ const MONTHS = [
   { key: "August2025", label: "August 2025" },
 ];
 
+// Available months per state
+const STATE_MONTHS = {
+  CA: MONTHS.map((m) => m.key),
+  CT: ["FebMar2025", "May2025"],
+  CO: ["FebMar2025", "May2025"],
+};
+
 const COLOR_PALETTE = [
   "#1f77b4",
   "#ff7f0e",
@@ -106,17 +113,20 @@ const PNC_REASON_LIST = [
   "SegmentSwitchGPP",
 ];
 
+const AVAILABLE_STATES = ["CA", "CT", "CO"];
+
 export default function ReasonTrendsChart() {
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [chartType, setChartType] = useState("line");
-  const [monthToRows, setMonthToRows] = useState({});
-  const [monthToNullRows, setMonthToNullRows] = useState({});
+  const [stateMonthToRows, setStateMonthToRows] = useState({});
+  const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedStates, setSelectedStates] = useState(["CA"]);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadAllMonths() {
+    async function loadSelectedStates() {
       setLoading(true);
       setError("");
       try {
@@ -145,69 +155,124 @@ export default function ReasonTrendsChart() {
           });
         }
 
-        const results = await Promise.all(
-          MONTHS.map(async (m) => {
-            const pncPath = `/Crawl_Data_CA - PotentiallyNonCompliantSites${m.key}.csv`;
-            const nullPath = `/Crawl_Data_CA - NullSites${m.key}.csv`;
-            const [pncRows, nullRows] = await Promise.all([
-              parseCsv(pncPath),
-              parseCsv(nullPath),
-            ]);
-            return { key: m.key, pncRows, nullRows };
+        const states = Array.isArray(selectedStates) ? selectedStates : [];
+        if (states.length === 0) {
+          setStateMonthToRows({});
+          setStateMonthToNullRows({});
+          setLoading(false);
+          return;
+        }
+
+        const perStateResults = await Promise.all(
+          states.map(async (stateCode) => {
+            const monthKeys = STATE_MONTHS[stateCode] || [];
+            const results = await Promise.all(
+              monthKeys.map(async (monthKey) => {
+                const pncPath = `/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`;
+                const nullPath = `/${stateCode}/Crawl_Data_${stateCode} - NullSites${monthKey}.csv`;
+                const [pncRows, nullRows] = await Promise.all([
+                  parseCsv(pncPath),
+                  parseCsv(nullPath),
+                ]);
+                return { key: monthKey, pncRows, nullRows };
+              })
+            );
+            const pncMap = {};
+            const nullMap = {};
+            results.forEach(({ key, pncRows, nullRows }) => {
+              pncMap[key] = pncRows;
+              nullMap[key] = nullRows;
+            });
+            return { state: stateCode, pncMap, nullMap };
           })
         );
         if (cancelled) return;
-        const pncMap = {};
-        const nullMap = {};
-        results.forEach(({ key, pncRows, nullRows }) => {
-          pncMap[key] = pncRows;
-          nullMap[key] = nullRows;
+        const nextStateMonthToRows = {};
+        const nextStateMonthToNullRows = {};
+        perStateResults.forEach(({ state, pncMap, nullMap }) => {
+          nextStateMonthToRows[state] = pncMap;
+          nextStateMonthToNullRows[state] = nullMap;
         });
-        setMonthToRows(pncMap);
-        setMonthToNullRows(nullMap);
+        setStateMonthToRows(nextStateMonthToRows);
+        setStateMonthToNullRows(nextStateMonthToNullRows);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-    loadAllMonths();
+    loadSelectedStates();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedStates]);
 
-  const labels = useMemo(() => MONTHS.map((m) => m.label), []);
+  const unifiedMonthKeys = useMemo(() => {
+    const states = Array.isArray(selectedStates) ? selectedStates : [];
+    if (states.length === 0) return [];
+    const keySet = new Set();
+    states.forEach((s) => {
+      const keys = STATE_MONTHS[s] || [];
+      keys.forEach((k) => keySet.add(k));
+    });
+    // Preserve global chronological order from MONTHS
+    return MONTHS.filter((m) => keySet.has(m.key)).map((m) => m.key);
+  }, [selectedStates]);
+
+  const labels = useMemo(() => {
+    const keyToLabel = new Map(MONTHS.map((m) => [m.key, m.label]));
+    return unifiedMonthKeys.map((k) => keyToLabel.get(k));
+  }, [unifiedMonthKeys]);
 
   const datasets = useMemo(() => {
     if (!selectedReasons || selectedReasons.length === 0) return [];
-    return selectedReasons.map((reason, idx) => {
-      const color = COLOR_PALETTE[idx % COLOR_PALETTE.length];
-      let data;
-      if (reason === SPECIAL_SERIES.PNC_SITES) {
-        data = MONTHS.map((m) => (monthToRows[m.key] || []).length);
-      } else if (reason === SPECIAL_SERIES.NULL_SITES) {
-        data = MONTHS.map((m) => (monthToNullRows[m.key] || []).length);
-      } else {
-        data = MONTHS.map((m) => {
-          const rows = monthToRows[m.key] || [];
-          let count = 0;
-          for (const row of rows) {
-            const reasons = parseReasons(row?.Reasons_Non_Compliant);
-            if (reasons.includes(reason)) count += 1;
-          }
-          return count;
+    const allDatasets = [];
+    const states =
+      selectedStates && selectedStates.length > 0 ? selectedStates : [];
+    states.forEach((stateCode, stateIdx) => {
+      selectedReasons.forEach((reason, reasonIdx) => {
+        const color =
+          COLOR_PALETTE[(reasonIdx * 3 + stateIdx) % COLOR_PALETTE.length];
+        let data;
+        if (reason === SPECIAL_SERIES.PNC_SITES) {
+          data = unifiedMonthKeys.map((monthKey) => {
+            const rows = stateMonthToRows[stateCode]?.[monthKey];
+            return Array.isArray(rows) ? rows.length : null;
+          });
+        } else if (reason === SPECIAL_SERIES.NULL_SITES) {
+          data = unifiedMonthKeys.map((monthKey) => {
+            const rows = stateMonthToNullRows[stateCode]?.[monthKey];
+            return Array.isArray(rows) ? rows.length : null;
+          });
+        } else {
+          data = unifiedMonthKeys.map((monthKey) => {
+            const rows = stateMonthToRows[stateCode]?.[monthKey];
+            if (!Array.isArray(rows)) return null;
+            let count = 0;
+            for (const row of rows) {
+              const reasons = parseReasons(row?.Reasons_Non_Compliant);
+              if (reasons.includes(reason)) count += 1;
+            }
+            return count;
+          });
+        }
+        allDatasets.push({
+          label: `${stateCode} - ${reason}`,
+          data,
+          borderColor: color,
+          backgroundColor: chartType === "line" ? color : `${color}80`,
+          fill: false,
         });
-      }
-      return {
-        label: reason,
-        data,
-        borderColor: color,
-        backgroundColor: chartType === "line" ? color : `${color}80`,
-        fill: false,
-      };
+      });
     });
-  }, [selectedReasons, monthToRows, monthToNullRows, chartType]);
+    return allDatasets;
+  }, [
+    selectedReasons,
+    selectedStates,
+    stateMonthToRows,
+    stateMonthToNullRows,
+    chartType,
+  ]);
 
   const data = useMemo(
     () => ({
@@ -283,6 +348,44 @@ export default function ReasonTrendsChart() {
           <option value="bar">Bar</option>
         </select>
       </div>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          margin: "8px 0",
+        }}
+      >
+        <label style={{ marginRight: 8 }}>States:</label>
+        {AVAILABLE_STATES.map((stateCode) => {
+          const active = selectedStates.includes(stateCode);
+          return (
+            <button
+              key={stateCode}
+              onClick={() =>
+                setSelectedStates((prev) =>
+                  prev.includes(stateCode)
+                    ? prev.filter((s) => s !== stateCode)
+                    : [...prev, stateCode]
+                )
+              }
+              style={{
+                padding: "6px 10px",
+                borderRadius: 6,
+                border: active ? "1px solid #1976d2" : "1px solid #ddd",
+                background: active ? "#e3f2fd" : "#fff",
+                cursor: "pointer",
+                color: "#000",
+              }}
+            >
+              {stateCode}
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ marginBottom: 8 }}>
         <div
           style={{
