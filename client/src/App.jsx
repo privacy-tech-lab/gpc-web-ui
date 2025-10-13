@@ -261,7 +261,7 @@ function App() {
         . To track the evolution of GPC compliance on the web over time we are
         performing regular crawls of a set of 11,708 websites.
       </p>
-      <ReasonTrendsChart />
+      <ReasonTrendsChart timePeriods={timePeriods} stateMonths={stateMonths} />
       <h2>Filter GPC Web Crawler Data</h2>
       <div className="controls">
         <label htmlFor="state-select">State:</label>

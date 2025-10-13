@@ -49,23 +49,6 @@ function parseReasons(value) {
     .filter(Boolean);
 }
 
-const MONTHS = [
-  { key: "Dec2023", label: "December 2023" },
-  { key: "Feb2024", label: "February 2024" },
-  { key: "Apr2024", label: "April 2024" },
-  { key: "Jun2024", label: "June 2024" },
-  { key: "FebMar2025", label: "Feb-Mar 2025" },
-  { key: "May2025", label: "May 2025" },
-  { key: "August2025", label: "August 2025" },
-];
-
-// Available months per state
-const STATE_MONTHS = {
-  CA: MONTHS.map((m) => m.key),
-  CT: ["FebMar2025", "May2025"],
-  CO: ["FebMar2025", "May2025"],
-};
-
 const COLOR_PALETTE = [
   "#1f77b4",
   "#ff7f0e",
@@ -115,7 +98,7 @@ const PNC_REASON_LIST = [
 
 const AVAILABLE_STATES = ["CA", "CT", "CO"];
 
-export default function ReasonTrendsChart() {
+export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [chartType, setChartType] = useState("line");
   const [stateMonthToRows, setStateMonthToRows] = useState({});
@@ -165,7 +148,7 @@ export default function ReasonTrendsChart() {
 
         const perStateResults = await Promise.all(
           states.map(async (stateCode) => {
-            const monthKeys = STATE_MONTHS[stateCode] || [];
+            const monthKeys = (stateMonths && stateMonths[stateCode]) || [];
             const results = await Promise.all(
               monthKeys.map(async (monthKey) => {
                 const pncPath = `/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`;
@@ -209,20 +192,23 @@ export default function ReasonTrendsChart() {
 
   const unifiedMonthKeys = useMemo(() => {
     const states = Array.isArray(selectedStates) ? selectedStates : [];
-    if (states.length === 0) return [];
+    if (!Array.isArray(timePeriods) || timePeriods.length === 0) return [];
+    if (states.length === 0) return timePeriods.map((p) => p.key);
     const keySet = new Set();
     states.forEach((s) => {
-      const keys = STATE_MONTHS[s] || [];
+      const keys = (stateMonths && stateMonths[s]) || [];
       keys.forEach((k) => keySet.add(k));
     });
-    // Preserve global chronological order from MONTHS
-    return MONTHS.filter((m) => keySet.has(m.key)).map((m) => m.key);
-  }, [selectedStates]);
+    // Preserve chronological order from timePeriods
+    return timePeriods.filter((p) => keySet.has(p.key)).map((p) => p.key);
+  }, [selectedStates, timePeriods, stateMonths]);
 
   const labels = useMemo(() => {
-    const keyToLabel = new Map(MONTHS.map((m) => [m.key, m.label]));
+    const keyToLabel = new Map(
+      (timePeriods || []).map((p) => [p.key, p.label])
+    );
     return unifiedMonthKeys.map((k) => keyToLabel.get(k));
-  }, [unifiedMonthKeys]);
+  }, [timePeriods, unifiedMonthKeys]);
 
   const datasets = useMemo(() => {
     if (!selectedReasons || selectedReasons.length === 0) return [];
