@@ -2,7 +2,9 @@
 
 Code for showing GPC crawl results in an interactive user interface on the web
 
-# Instructions for Running
+Currently deployed on vercel at [gpc-web-ui.vercel.app](gpc-web-ui.vercel.app)
+
+# Instructions for Running Locally
 
 Run the following command to clone this repository locally:
 
