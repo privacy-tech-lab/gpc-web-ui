@@ -20,4 +20,10 @@ Run these commands, then navigate to the localhost link provided in your termina
 
 ```npm run dev```
 
+# Adding New Data
+
+To add new data to the UI:
+1. Download the <MonthYear>, <MonthYear>NullSites and <MonthYear>PotentiallyNonCompliantSites as csv files.
+2. Place the csv files in the `/public` folder in the appropriate state.
+3. Update the `stateMonths` and `timePeriods` in `App.jsx`
 
