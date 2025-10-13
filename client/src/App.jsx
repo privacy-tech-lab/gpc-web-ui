@@ -22,6 +22,21 @@ function App() {
     ],
     []
   );
+  const stateMonths = {
+    CA: [
+      "Dec2023",
+      "Feb2024",
+      "Apr2024",
+      "Jun2024",
+      "FebMar2025",
+      "May2025",
+      "August2025",
+    ],
+    CT: ["FebMar2025", "May2025"],
+    CO: ["FebMar2025", "May2025"],
+  };
+
+  const availableStates = ["CA", "CT", "CO"];
 
   const dataTypes = useMemo(
     () => [
@@ -35,20 +50,42 @@ function App() {
   const [selectedTimePeriod, setSelectedTimePeriod] = useState("May2025");
   const [selectedDataType, setSelectedDataType] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedState, setSelectedState] = useState("CA");
 
   const getFilePath = useMemo(() => {
-    const buildPath = (period, type) => {
+    const buildPath = (period, type, state) => {
       if (type === "all") {
-        return `CA/Crawl_Data_CA - ${period}.csv`;
+        return `/${state}/Crawl_Data_${state} - ${period}.csv`;
       } else if (type === "null") {
-        return `CA/Crawl_Data_CA - NullSites${period}.csv`;
+        return `/${state}/Crawl_Data_${state} - NullSites${period}.csv`;
       } else if (type === "pnc") {
-        return `CA/Crawl_Data_CA - PotentiallyNonCompliantSites${period}.csv`;
+        return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${period}.csv`;
       }
-      return `CA/Crawl_Data_CA - ${period}.csv`;
+      return `/${state}/Crawl_Data_${state} - ${period}.csv`;
     };
-    return buildPath(selectedTimePeriod, selectedDataType);
-  }, [selectedTimePeriod, selectedDataType]);
+    return buildPath(selectedTimePeriod, selectedDataType, selectedState);
+  }, [selectedTimePeriod, selectedDataType, selectedState]);
+
+  // Periods allowed for the currently selected state
+  const allowedTimePeriods = useMemo(() => {
+    const keys = stateMonths[selectedState] || [];
+    const allowed = timePeriods.filter((p) => keys.includes(p.key));
+    return allowed;
+  }, [selectedState, stateMonths, timePeriods]);
+
+  // Ensure selected time period is valid when state changes
+  useEffect(() => {
+    const allowedKeys = stateMonths[selectedState] || [];
+    if (!allowedKeys.includes(selectedTimePeriod)) {
+      // Default to the last available (usually most recent) for that state
+      const next =
+        allowedKeys.length > 0
+          ? allowedKeys[allowedKeys.length - 1]
+          : selectedTimePeriod;
+      setSelectedTimePeriod(next);
+      setCurrentPage(1);
+    }
+  }, [selectedState]);
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [showFilters, setShowFilters] = useState(true);
 
@@ -227,6 +264,22 @@ function App() {
       <ReasonTrendsChart />
       <h2>Filter GPC Web Crawler Data</h2>
       <div className="controls">
+        <label htmlFor="state-select">State:</label>
+        <select
+          id="state-select"
+          value={selectedState}
+          onChange={(e) => {
+            setSelectedState(e.target.value);
+            setCurrentPage(1);
+          }}
+        >
+          {availableStates.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+
         <label htmlFor="time-period-select">Time Period:</label>
         <select
           id="time-period-select"
@@ -236,7 +289,7 @@ function App() {
             setCurrentPage(1);
           }}
         >
-          {timePeriods.map((period) => (
+          {allowedTimePeriods.map((period) => (
             <option key={period.key} value={period.key}>
               {period.label}
             </option>
