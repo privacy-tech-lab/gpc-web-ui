@@ -236,6 +236,30 @@ function App() {
     [filteredRows, startIndex, endIndex]
   );
 
+  const handleExportFiltered = () => {
+    try {
+      const cols = displayHeaders;
+      const data = filteredRows.map((row) =>
+        cols.map((h) => (row && row[h] != null ? String(row[h]) : ""))
+      );
+      const csv = Papa.unparse({ fields: cols, data });
+      const blob = new Blob(["\ufeff", csv], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const filename = `GPC_${selectedState}_${selectedTimePeriod}_${selectedDataType}_filtered.csv`;
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to export CSV:", e);
+    }
+  };
+
   return (
     <div className="app-container">
       <h1>GPC Crawl Data</h1>
@@ -323,6 +347,12 @@ function App() {
           }}
           style={{ minWidth: 260 }}
         />
+        <button
+          onClick={handleExportFiltered}
+          disabled={totalItems === 0 || loading}
+        >
+          Export filtered data ({totalItems})
+        </button>
       </div>
 
       {selectedDataType === "pnc" && (
