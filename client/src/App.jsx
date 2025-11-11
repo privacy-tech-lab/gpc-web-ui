@@ -34,9 +34,10 @@ function App() {
     ],
     CT: ["FebMar2025", "May2025", "August2025"],
     CO: ["FebMar2025", "May2025"],
+    NJ: ["August2025"],
   };
 
-  const availableStates = ["CA", "CT", "CO"];
+  const availableStates = ["CA", "CT", "CO", "NJ"];
 
   const dataTypes = useMemo(
     () => [
