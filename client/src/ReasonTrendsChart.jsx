@@ -96,7 +96,7 @@ const PNC_REASON_LIST = [
   "SegmentSwitchGPP",
 ];
 
-const AVAILABLE_STATES = ["CA", "CT", "CO"];
+const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
 
 export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
   const [selectedReasons, setSelectedReasons] = useState([]);
