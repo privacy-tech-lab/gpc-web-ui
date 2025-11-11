@@ -32,7 +32,7 @@ function App() {
       "May2025",
       "August2025",
     ],
-    CT: ["FebMar2025", "May2025"],
+    CT: ["FebMar2025", "May2025", "August2025"],
     CO: ["FebMar2025", "May2025"],
   };
 
