@@ -106,6 +106,30 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedStates, setSelectedStates] = useState(["CA"]);
+  const [reasonDescriptions, setReasonDescriptions] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/classifications_of_compliance.json")
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(
+              new Error("Failed to load classifications_of_compliance.json")
+            )
+      )
+      .then((data) => {
+        if (!cancelled && data && typeof data === "object") {
+          setReasonDescriptions(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load reason descriptions:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -405,26 +429,36 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
           ].map((reason) => {
             const active = selectedReasons?.includes(reason);
             return (
-              <button
+              <div
                 key={reason}
-                onClick={() => {
-                  setSelectedReasons((prev) =>
-                    prev.includes(reason)
-                      ? prev.filter((r) => r !== reason)
-                      : [...prev, reason]
-                  );
-                }}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 6,
-                  border: active ? "1px solid #1976d2" : "1px solid #ddd",
-                  background: active ? "#e3f2fd" : "#fff",
-                  cursor: "pointer",
-                  color: "#000",
-                }}
+                className="chart-reason-tooltip-wrapper"
+                style={{ position: "relative" }}
               >
-                {reason}
-              </button>
+                <button
+                  onClick={() => {
+                    setSelectedReasons((prev) =>
+                      prev.includes(reason)
+                        ? prev.filter((r) => r !== reason)
+                        : [...prev, reason]
+                    );
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    border: active ? "1px solid #1976d2" : "1px solid #ddd",
+                    background: active ? "#e3f2fd" : "#fff",
+                    cursor: "pointer",
+                    color: "#000",
+                  }}
+                >
+                  {reason}
+                </button>
+                {reasonDescriptions[reason] ? (
+                  <div className="chart-reason-tooltip">
+                    {reasonDescriptions[reason]}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </div>
