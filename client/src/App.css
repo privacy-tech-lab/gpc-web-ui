@@ -301,6 +301,48 @@ td.Reasons_Non_Compliant {
 }
 
 /* ---------------------------
+     Chart Reason Tooltips
+  --------------------------- */
+.chart-reason-tooltip-wrapper {
+  position: relative;
+}
+
+.chart-reason-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 17, 0.85);
+  color: #fff;
+  padding: 8px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  width: 280px;
+  max-width: 80vw;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  z-index: 20;
+}
+
+.chart-reason-tooltip-wrapper:hover .chart-reason-tooltip {
+  display: block;
+}
+
+.chart-reason-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: rgba(17, 17, 17, 0.95) transparent transparent transparent;
+}
+
+/* ---------------------------
      Responsive Enhancements
   --------------------------- */
 @media screen and (max-width: 1000px) {
