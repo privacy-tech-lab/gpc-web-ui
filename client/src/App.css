@@ -283,6 +283,31 @@ td.Reasons_Non_Compliant {
   font-weight: 500;
 }
 
+/* Sticky first visible column */
+th.col-sticky,
+td.col-sticky {
+  position: sticky;
+  left: 0;
+}
+th.col-sticky {
+  z-index: 3;
+  background: #f2f6fa;
+  box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
+  border-right: 1px solid #dfe6ec;
+}
+td.col-sticky {
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
+  border-right: 1px solid #dfe6ec;
+}
+tbody tr:nth-child(even) td.col-sticky {
+  background: #fafcff;
+}
+tbody tr:hover td.col-sticky {
+  background: #f5faff !important;
+}
+
 /* ---------------------------
       Compact Reason Filters
     --------------------------- */

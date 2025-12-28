@@ -177,6 +177,13 @@ function App() {
   useEffect(() => {
     setVisibleColumns(displayHeaders);
   }, [displayHeaders]);
+  const firstStickyColumn = useMemo(() => {
+    const cols =
+      Array.isArray(visibleColumns) && visibleColumns.length > 0
+        ? visibleColumns
+        : displayHeaders;
+    return cols && cols.length > 0 ? cols[0] : undefined;
+  }, [visibleColumns, displayHeaders]);
 
   const pncReasonList = useMemo(
     () => [
@@ -584,7 +591,12 @@ function App() {
                     ? visibleColumns
                     : displayHeaders
                   ).map((h) => (
-                    <th key={h}>
+                    <th
+                      key={h}
+                      className={
+                        h === firstStickyColumn ? "col-sticky" : undefined
+                      }
+                    >
                       <span className="header-content">{h}</span>
                     </th>
                   ))}
@@ -600,9 +612,14 @@ function App() {
                       <td
                         key={h}
                         className={
-                          h === "Reasons_Non_Compliant"
-                            ? "Reasons_Non_Compliant"
-                            : undefined
+                          [
+                            h === "Reasons_Non_Compliant"
+                              ? "Reasons_Non_Compliant"
+                              : "",
+                            h === firstStickyColumn ? "col-sticky" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || undefined
                         }
                       >
                         <span className="cell-content">
