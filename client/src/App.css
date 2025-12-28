@@ -2,7 +2,6 @@ body {
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 16px;
   line-height: 1.6;
-  text-align: center;
   color: #333;
   background: #f7f9fb;
   margin: 0;
@@ -21,45 +20,85 @@ body {
   max-width: 1400px;
   margin: 0 auto;
   padding: 20px;
-  text-align: left;
 }
 
 h1,
 h2,
 h3 {
-  text-align: center;
   font-weight: 600;
   color: #222;
   margin-bottom: 0.5em;
 }
 
 p {
-  text-align: center;
   margin-bottom: 1em;
   color: #555;
-  margin: 0 40px;
 }
 
 a {
-  color: #007acc;
+  color: var(--brand);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 a:hover {
-  color: #005f99;
+  color: var(--brand-dark);
   text-decoration: underline;
+}
+
+/* ---------------------------
+     Layout & Sections
+  --------------------------- */
+.section {
+  margin: 16px 0 20px;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid #eee;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.card--padded {
+  padding: 16px;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.hero h1 {
+  margin: 0 0 8px;
+}
+
+.intro {
+  max-width: 900px;
+  margin: 8px auto 0;
+  color: var(--muted);
+}
+
+.section-title {
+  margin: 0 0 12px;
+  text-align: center;
 }
 
 /* ---------------------------
      Container & Controls
   --------------------------- */
 .controls {
+  display: none; /* legacy */
+}
+
+.toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   justify-content: center;
-  margin-bottom: 20px;
+  margin: 16px auto 20px;
+  max-width: 1000px;
 }
 
 .controls label {
@@ -67,8 +106,9 @@ a:hover {
   margin-right: 5px;
 }
 
-select,
-button {
+.toolbar select,
+.toolbar button,
+.toolbar input[type="text"] {
   padding: 8px 14px;
   font-size: 14px;
   border-radius: 6px;
@@ -77,22 +117,48 @@ button {
   transition: all 0.2s;
 }
 
-select:hover,
-button:hover {
-  border-color: #007acc;
+.toolbar select:hover,
+.toolbar button:hover,
+.toolbar input[type="text"]:hover {
+  border-color: var(--brand);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-button {
-  background-color: #007acc;
-  color: #fff;
+.toolbar button {
+  background-color: var(--brand);
+  color: var(--brand-contrast);
   cursor: pointer;
   font-weight: 500;
   border: none;
 }
 
-button:hover {
-  background-color: #005f99;
+.toolbar button:hover {
+  background-color: var(--brand-dark);
+}
+
+.toolbar .input {
+  min-width: 260px;
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.chip {
+  padding: 6px 10px;
+  border-radius: 9999px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+
+.chip--active {
+  border-color: var(--brand);
+  background: #eaf6ea;
 }
 
 .toggle-btn {
@@ -100,14 +166,14 @@ button:hover {
   padding: 6px 12px;
   border: 1px solid #888;
   border-radius: 4px;
-  background-color: #007acc;
+  background-color: var(--brand);
   cursor: pointer;
 }
 
 .toggle-btn.active {
-  background-color: #4caf50; /* green */
-  color: white;
-  border-color: #4caf50;
+  background-color: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
 }
 
 /* ---------------------------
@@ -117,8 +183,9 @@ button:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 70%;
-  margin: 15px auto;
+  width: 100%;
+  max-width: 960px;
+  margin: 12px auto;
   font-size: 14px;
   color: #444;
 }
@@ -129,21 +196,29 @@ button:hover {
   border-radius: 5px;
 }
 
+.pager-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 /* ---------------------------
      Table Styles
   --------------------------- */
 #table-wrapper {
   margin-bottom: 20px;
-  background: #fff;
+  background: var(--surface);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   overflow: hidden;
   transition: all 0.3s ease;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 #table-scroll {
   overflow-x: auto;
-  overflow-y: hidden;
   width: 100%;
   -webkit-overflow-scrolling: touch;
 }
@@ -156,7 +231,7 @@ table {
 
 th,
 td {
-  padding: 14px 16px;
+  padding: 12px 14px;
   text-align: left;
   border-bottom: 1px solid #e0e0e0;
   white-space: nowrap;
@@ -178,8 +253,12 @@ td {
 }
 
 tr:hover {
-  background-color: #f0f7ff;
+  background-color: #f5faff;
   cursor: default;
+}
+
+tbody tr:nth-child(even) {
+  background: #fafcff;
 }
 
 /* Non-compliant reason cells */
@@ -192,11 +271,15 @@ td.Reasons_Non_Compliant {
       Compact Reason Filters
     --------------------------- */
 .compact-filters {
-  margin-bottom: 20px;
-  background: #fff;
-  border-radius: 8px;
+  margin: 16px 0 20px;
+  background: var(--surface);
+  border-radius: 10px;
+  border: 1px solid #eee;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   overflow: hidden;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .filter-header {
@@ -219,17 +302,17 @@ td.Reasons_Non_Compliant {
   padding: 6px 12px;
   font-size: 12px;
   border-radius: 4px;
-  border: 1px solid #007acc;
-  background-color: #007acc;
-  color: white;
+  border: 1px solid var(--brand);
+  background-color: var(--brand);
+  color: var(--brand-contrast);
   cursor: pointer;
   font-weight: 500;
   transition: all 0.2s;
 }
 
 .toggle-filters-btn:hover {
-  background-color: #005f99;
-  border-color: #005f99;
+  background-color: var(--brand-dark);
+  border-color: var(--brand-dark);
 }
 
 .filter-content {
@@ -255,9 +338,9 @@ td.Reasons_Non_Compliant {
 }
 
 .compact-btn:hover {
-  border-color: #007acc;
-  background-color: #e6f0fa;
-  color: #007acc;
+  border-color: var(--brand);
+  background-color: #e8f3ea;
+  color: var(--brand);
 }
 
 .compact-btn:disabled {
@@ -288,15 +371,15 @@ td.Reasons_Non_Compliant {
 }
 
 .reason-filter-btn:hover {
-  border-color: #007acc;
+  border-color: var(--brand);
   background-color: #f8f9fa;
-  color: #007acc;
+  color: var(--brand);
 }
 
 .reason-filter-btn.active {
-  background-color: #007acc;
-  border-color: #007acc;
-  color: #ffffff;
+  background-color: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-contrast);
   font-weight: 500;
 }
 
@@ -342,6 +425,78 @@ td.Reasons_Non_Compliant {
   border-color: rgba(17, 17, 17, 0.95) transparent transparent transparent;
 }
 
+.chart-area {
+  height: 360px;
+}
+
+/* ---------------------------
+     Column Picker
+  --------------------------- */
+.column-picker {
+  max-width: 1000px;
+  margin: 12px auto 20px;
+}
+.column-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.column-picker-actions {
+  display: flex;
+  gap: 8px;
+}
+.column-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.column-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.column-item span {
+  flex: 1;
+  min-width: 0; /* allow flex child to shrink for ellipsis */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------
+     KPI Cards
+  --------------------------- */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 1000px;
+  margin: 12px auto 20px;
+}
+.kpi {
+  background: var(--surface);
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.kpi-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+.kpi-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 /* ---------------------------
      Responsive Enhancements
   --------------------------- */
@@ -359,8 +514,12 @@ td.Reasons_Non_Compliant {
     flex-direction: column;
     align-items: stretch;
   }
-  select,
-  button {
+  .toolbar select,
+  .toolbar button,
+  .toolbar input[type="text"] {
     width: 100%;
+  }
+  .kpis {
+    grid-template-columns: 1fr;
   }
 }

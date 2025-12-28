@@ -50,22 +50,22 @@ function parseReasons(value) {
 }
 
 const COLOR_PALETTE = [
-  "#1f77b4",
-  "#ff7f0e",
-  "#2ca02c",
-  "#d62728",
-  "#9467bd",
-  "#8c564b",
-  "#e377c2",
-  "#7f7f7f",
-  "#bcbd22",
-  "#17becf",
-  "#5e3c99",
-  "#e66101",
-  "#4daf4a",
-  "#984ea3",
-  "#a65628",
-  "#f781bf",
+  "#2e7d32", // green 700
+  "#1b5e20", // green 900
+  "#43a047", // green 600
+  "#66bb6a", // green 400
+  "#81c784", // green 300
+  "#26a69a", // teal 600
+  "#00796b", // teal 800
+  "#558b2f", // light green 800
+  "#689f38", // light green 700
+  "#8bc34a", // light green 500
+  "#33691e", // light green 900
+  "#00acc1", // cyan 600
+  "#26c6da", // cyan 400
+  "#9ccc65", // light green 400
+  "#4db6ac", // teal 300
+  "#a5d6a7", // green 200
 ];
 
 const SPECIAL_SERIES = {
@@ -317,38 +317,10 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
   );
 
   return (
-    <div
-      style={{
-        border: "1px solid #eee",
-        padding: 12,
-        borderRadius: 8,
-        marginBottom: 16,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 12,
-          marginBottom: 8,
-        }}
-      >
-        <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>
-          Track Compliance Evolution Over Time
-        </h2>
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-        }}
-      >
-        <label htmlFor="chart-type-select" style={{ marginRight: 8 }}>
-          Chart Type:
-        </label>
+    <div className="card card--padded section">
+      <h2 className="section-title">Track Compliance Evolution Over Time</h2>
+      <div className="toolbar" role="group" aria-label="Chart display options">
+        <label htmlFor="chart-type-select">Chart Type:</label>
         <select
           id="chart-type-select"
           value={chartType}
@@ -359,21 +331,13 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         </select>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          margin: "8px 0",
-        }}
-      >
-        <label style={{ marginRight: 8 }}>States:</label>
+      <div className="chip-group" role="group" aria-label="States">
         {AVAILABLE_STATES.map((stateCode) => {
           const active = selectedStates.includes(stateCode);
           return (
             <button
               key={stateCode}
+              className={`chip${active ? " chip--active" : ""}`}
               onClick={() =>
                 setSelectedStates((prev) =>
                   prev.includes(stateCode)
@@ -381,14 +345,6 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
                     : [...prev, stateCode]
                 )
               }
-              style={{
-                padding: "6px 10px",
-                borderRadius: 6,
-                border: active ? "1px solid #1976d2" : "1px solid #ddd",
-                background: active ? "#e3f2fd" : "#fff",
-                cursor: "pointer",
-                color: "#000",
-              }}
             >
               {stateCode}
             </button>
@@ -396,17 +352,10 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         })}
       </div>
 
-      <div style={{ marginBottom: 8 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
+      <div className="section">
+        <div className="toolbar" style={{ justifyContent: "space-between" }}>
           <strong>Chart Reason Filters</strong>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={() => setSelectedReasons(PNC_REASON_LIST)}
               disabled={PNC_REASON_LIST.length === 0}
@@ -421,7 +370,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
             </button>
           </div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div className="chip-group">
           {[
             SPECIAL_SERIES.PNC_SITES,
             SPECIAL_SERIES.NULL_SITES,
@@ -429,26 +378,15 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
           ].map((reason) => {
             const active = selectedReasons?.includes(reason);
             return (
-              <div
-                key={reason}
-                className="chart-reason-tooltip-wrapper"
-                style={{ position: "relative" }}
-              >
+              <div key={reason} className="chart-reason-tooltip-wrapper">
                 <button
+                  className={`chip${active ? " chip--active" : ""}`}
                   onClick={() => {
                     setSelectedReasons((prev) =>
                       prev.includes(reason)
                         ? prev.filter((r) => r !== reason)
                         : [...prev, reason]
                     );
-                  }}
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    border: active ? "1px solid #1976d2" : "1px solid #ddd",
-                    background: active ? "#e3f2fd" : "#fff",
-                    cursor: "pointer",
-                    color: "#000",
                   }}
                 >
                   {reason}
@@ -477,7 +415,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
           </div>
         )}
       {!loading && !error && selectedReasons && selectedReasons.length > 0 && (
-        <div style={{ height: 360 }}>
+        <div className="chart-area">
           {chartType === "line" ? (
             <Line data={data} options={options} />
           ) : (

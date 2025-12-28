@@ -171,6 +171,13 @@ function App() {
     return [];
   }, [headers, rows]);
 
+  // Column visibility
+  const [visibleColumns, setVisibleColumns] = useState([]);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  useEffect(() => {
+    setVisibleColumns(displayHeaders);
+  }, [displayHeaders]);
+
   const pncReasonList = useMemo(
     () => [
       "Invalid_uspapi",
@@ -239,7 +246,10 @@ function App() {
 
   const handleExportFiltered = () => {
     try {
-      const cols = displayHeaders;
+      const cols =
+        Array.isArray(visibleColumns) && visibleColumns.length > 0
+          ? visibleColumns
+          : displayHeaders;
       const data = filteredRows.map((row) =>
         cols.map((h) => (row && row[h] != null ? String(row[h]) : ""))
       );
@@ -263,32 +273,42 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1>GPC Crawl Data</h1>
-
-      <p>
-        The GPC Web Crawler analyzes websites' compliance with{" "}
-        <a href="https://globalprivacycontrol.org/" target="_blank">
-          Global Privacy Control (GPC)
-        </a>{" "}
-        at scale. GPC is a privacy preference signal that people can use to
-        exercise their rights to opt out from web tracking. The GPC Web Crawler
-        is based on{" "}
-        <a href="https://www.selenium.dev/" target="_blank">
-          Selenium
-        </a>{" "}
-        and the{" "}
-        <a
-          href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension"
-          target="_blank"
-        >
-          OptMeowt Analysis extension
-        </a>
-        . To track the evolution of GPC compliance on the web over time we are
-        performing regular crawls of a set of 11,708 websites.
-      </p>
+      <div className="hero">
+        <h1>GPC Crawl Data</h1>
+        <p className="intro">
+          The GPC Web Crawler analyzes websites' compliance with{" "}
+          <a
+            href="https://globalprivacycontrol.org/"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Global Privacy Control (GPC)
+          </a>{" "}
+          at scale. GPC is a privacy preference signal that people can use to
+          exercise their rights to opt out from web tracking. The GPC Web
+          Crawler is based on{" "}
+          <a
+            href="https://www.selenium.dev/"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            Selenium
+          </a>{" "}
+          and the{" "}
+          <a
+            href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension"
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            OptMeowt Analysis extension
+          </a>
+          . To track the evolution of GPC compliance on the web over time we are
+          performing regular crawls of a set of 11,708 websites.
+        </p>
+      </div>
       <ReasonTrendsChart timePeriods={timePeriods} stateMonths={stateMonths} />
-      <h2>Filter GPC Web Crawler Data</h2>
-      <div className="controls">
+      <h2 className="section-title">Filter GPC Web Crawler Data</h2>
+      <div className="toolbar" role="group" aria-label="Data filters">
         <label htmlFor="state-select">State:</label>
         <select
           id="state-select"
@@ -336,24 +356,111 @@ function App() {
             </option>
           ))}
         </select>
-        <label htmlFor="url-search">Search URL:</label>
-        <input
-          id="url-search"
-          type="text"
-          placeholder="e.g., example.com"
-          value={searchQuery}
-          onChange={(e) => {
-            setCurrentPage(1);
-            setSearchQuery(e.target.value);
-          }}
-          style={{ minWidth: 260 }}
-        />
+        <div className="toolbar-item-group">
+          <label htmlFor="url-search">Search URL:</label>{" "}
+          <input
+            id="url-search"
+            type="text"
+            placeholder="e.g., example.com"
+            value={searchQuery}
+            onChange={(e) => {
+              setCurrentPage(1);
+              setSearchQuery(e.target.value);
+            }}
+            className="input"
+          />
+        </div>
+        <button
+          type="button"
+          aria-expanded={showColumnPicker}
+          aria-controls="column-picker"
+          onClick={() => setShowColumnPicker((s) => !s)}
+        >
+          Edit Columns
+        </button>
         <button
           onClick={handleExportFiltered}
           disabled={totalItems === 0 || loading}
         >
           Export filtered data ({totalItems})
         </button>
+      </div>
+      {showColumnPicker && (
+        <div
+          id="column-picker"
+          className="card card--padded column-picker"
+          role="group"
+          aria-label="Toggle columns"
+        >
+          <div className="column-picker-header">
+            <strong>Select columns to display</strong>
+            <div className="column-picker-actions">
+              <button
+                type="button"
+                className="compact-btn"
+                onClick={() => setVisibleColumns(displayHeaders)}
+                disabled={displayHeaders.length === 0}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="compact-btn"
+                onClick={() => {
+                  // Keep at least one column selected; if only one, do nothing
+                  if (visibleColumns.length <= 1) return;
+                  // Clear down to the first header to keep one visible
+                  setVisibleColumns((prev) =>
+                    prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1)
+                  );
+                }}
+                disabled={visibleColumns.length <= 1}
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+          <div className="column-grid">
+            {displayHeaders.map((col) => {
+              const checked = visibleColumns.includes(col);
+              const id = `col-${col.replace(/\s+/g, "-")}`;
+              return (
+                <label key={col} htmlFor={id} className="column-item">
+                  <input
+                    id={id}
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setVisibleColumns((prev) => {
+                        const has = prev.includes(col);
+                        if (has) {
+                          // Do not allow removing the last visible column
+                          if (prev.length === 1) return prev;
+                          return prev.filter((c) => c !== col);
+                        }
+                        return [...prev, col];
+                      });
+                      setCurrentPage(1);
+                    }}
+                  />
+                  <span>{col}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div className="kpis">
+        <div className="kpi">
+          <div className="kpi-value">{totalItems.toLocaleString()}</div>
+          <div className="kpi-label">Sites (after filters)</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-value">
+            {totalItems > 0 ? `${startIndex + 1}-${endIndex}` : "0-0"}
+          </div>
+          <div className="kpi-label">Sites on this page</div>
+        </div>
       </div>
 
       {selectedDataType === "pnc" && (
@@ -424,14 +531,14 @@ function App() {
       )}
 
       {loading ? (
-        <div id="table-wrapper">
+        <div id="table-wrapper" role="status" aria-live="polite">
           <div style={{ padding: 16 }}>
             <h2>Loading CSV…</h2>
             <p>Fetching configuration and data.</p>
           </div>
         </div>
       ) : error ? (
-        <div id="table-wrapper">
+        <div id="table-wrapper" role="status" aria-live="polite">
           <div style={{ padding: 16, color: "#b00020" }}>
             <h2>Error</h2>
             <pre>{error}</pre>
@@ -449,7 +556,7 @@ function App() {
                 </span>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="pager-actions">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safeCurrentPage <= 1}
@@ -473,7 +580,10 @@ function App() {
             <table>
               <thead>
                 <tr>
-                  {displayHeaders.map((h) => (
+                  {(visibleColumns.length > 0
+                    ? visibleColumns
+                    : displayHeaders
+                  ).map((h) => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -481,7 +591,10 @@ function App() {
               <tbody>
                 {pageRows.map((row, idx) => (
                   <tr key={idx}>
-                    {displayHeaders.map((h) => (
+                    {(visibleColumns.length > 0
+                      ? visibleColumns
+                      : displayHeaders
+                    ).map((h) => (
                       <td
                         key={h}
                         className={
@@ -506,7 +619,7 @@ function App() {
                 </span>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className="pager-actions">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safeCurrentPage <= 1}
