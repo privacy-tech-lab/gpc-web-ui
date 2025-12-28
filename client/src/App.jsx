@@ -584,7 +584,9 @@ function App() {
                     ? visibleColumns
                     : displayHeaders
                   ).map((h) => (
-                    <th key={h}>{h}</th>
+                    <th key={h}>
+                      <span className="header-content">{h}</span>
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -603,7 +605,9 @@ function App() {
                             : undefined
                         }
                       >
-                        {String(row[h] ?? "")}
+                        <span className="cell-content">
+                          {String(row[h] ?? "")}
+                        </span>
                       </td>
                     ))}
                   </tr>

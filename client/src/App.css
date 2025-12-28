@@ -238,6 +238,22 @@ td {
   transition: background 0.2s;
 }
 
+/* Limit column visual width and handle overflow */
+.header-content {
+  display: block;
+  max-width: var(--table-cell-max, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-content {
+  display: block;
+  max-width: var(--table-cell-max, 320px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
 th {
   background-color: #f2f6fa;
   position: sticky;
