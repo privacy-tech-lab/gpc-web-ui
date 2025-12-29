@@ -238,6 +238,22 @@ td {
   transition: background 0.2s;
 }
 
+/* Limit column visual width and handle overflow */
+.header-content {
+  display: block;
+  max-width: var(--table-cell-max, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cell-content {
+  display: block;
+  max-width: var(--table-cell-max, 320px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
 th {
   background-color: #f2f6fa;
   position: sticky;
@@ -265,6 +281,31 @@ tbody tr:nth-child(even) {
 td.Reasons_Non_Compliant {
   color: #d9534f;
   font-weight: 500;
+}
+
+/* Sticky first visible column */
+th.col-sticky,
+td.col-sticky {
+  position: sticky;
+  left: 0;
+}
+th.col-sticky {
+  z-index: 3;
+  background: #f2f6fa;
+  box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
+  border-right: 1px solid #dfe6ec;
+}
+td.col-sticky {
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
+  border-right: 1px solid #dfe6ec;
+}
+tbody tr:nth-child(even) td.col-sticky {
+  background: #fafcff;
+}
+tbody tr:hover td.col-sticky {
+  background: #f5faff !important;
 }
 
 /* ---------------------------
