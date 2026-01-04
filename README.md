@@ -23,7 +23,7 @@ Run these commands, then navigate to the localhost link provided in your termina
 # Adding New Data
 
 To add new data to the UI:
-1. Download the <MonthYear>, <MonthYear>NullSites and <MonthYear>PotentiallyNonCompliantSites as csv files.
-2. Place the csv files in the `/public` folder in the appropriate state.
-3. Update the `stateMonths` and `timePeriods` in `App.jsx`
-
+1. Run the Full_Parse_Data_to_csv colab for your desired Month, Year, and State (Guide [here](https://github.com/privacy-tech-lab/gpc-web-crawler/wiki/Instructions-for-Lab-Members-Performing-Crawls#parsinganalyzing-crawl-data))
+2. Download the <MonthYear>, <MonthYear>NullSites and <MonthYear>PotentiallyNonCompliantSites csv files from Google Drive (GPC/GPC_Web/Web_Data/Web_Crawler/Crawl_Results_Overall/<State>).
+3. Put files in the `/public/<state>` folder
+4. Update the `stateMonths` and `timePeriods` in `App.jsx`
