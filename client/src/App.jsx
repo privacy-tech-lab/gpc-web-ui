@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
+import Tooltip from "./components/Tooltip";
 
 function App() {
   const [headers, setHeaders] = useState([]);
@@ -670,12 +671,12 @@ function App() {
                           <span className="header-content">
                             {headerFriendlyNames[h] || h}
                           </span>
-                          <span className="tooltip-container">
+                          <Tooltip
+                            content={headerDefinitions[h]}
+                            position="bottom"
+                          >
                             <span className="tooltip-icon">?</span>
-                            <span className="tooltip-text">
-                              {headerDefinitions[h]}
-                            </span>
-                          </span>
+                          </Tooltip>
                         </div>
                       ) : (
                         <span className="header-content">
