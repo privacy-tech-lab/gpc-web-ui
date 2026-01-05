@@ -266,10 +266,6 @@ th {
   text-align: left;
 }
 
-th:hover {
-  z-index: 20;
-}
-
 td {
   color: #555;
 }
@@ -586,6 +582,7 @@ tbody tr:hover td.col-sticky {
   align-items: center;
   justify-content: center;
   cursor: help;
+  flex-shrink: 0;
 }
 
 .tooltip-content {
