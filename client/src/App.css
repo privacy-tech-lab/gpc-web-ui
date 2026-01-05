@@ -435,7 +435,6 @@ tbody tr:hover td.col-sticky {
   --------------------------- */
 /* Unified into general Tooltip Styles */
 
-
 .chart-area {
   height: 360px;
 }
@@ -546,7 +545,7 @@ tbody tr:hover td.col-sticky {
 }
 
 /* ---------------------------
-     Tooltip Styles (Unified)
+     Tooltip Styles (Unified via Portal)
   --------------------------- */
 .header-wrapper {
   display: flex;
@@ -585,13 +584,10 @@ tbody tr:hover td.col-sticky {
   flex-shrink: 0;
 }
 
-.tooltip-content {
-  visibility: hidden;
+.tooltip-portal-content {
   position: absolute;
-  left: 50%;
   transform: translateX(-50%);
   background-color: #333;
-  /* Unified dark background */
   color: #fff;
   text-align: left;
   border-radius: 6px;
@@ -602,51 +598,31 @@ tbody tr:hover td.col-sticky {
   white-space: normal;
   width: max-content;
   max-width: 250px;
-  /* Consistent max width */
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  opacity: 0;
-  transition: opacity 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   pointer-events: none;
-  z-index: 1000;
+  z-index: 99999;
 }
 
-/* Hover state */
-.tooltip-wrapper:hover .tooltip-content {
-  visibility: visible;
-  opacity: 1;
+
+.tooltip-portal-content::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
 }
 
-/* Positions */
 .tooltip--top {
-  bottom: 100%;
-  margin-bottom: 8px;
-  /* Spacing */
+  transform: translate(-50%, -100%);
 }
 
 .tooltip--top::after {
-  content: "";
-  position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px;
-  border-style: solid;
   border-color: #333 transparent transparent transparent;
 }
 
-.tooltip--bottom {
-  top: 100%;
-  margin-top: 8px;
-  /* Spacing */
-}
-
 .tooltip--bottom::after {
-  content: "";
-  position: absolute;
   bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px;
-  border-style: solid;
   border-color: transparent transparent #333 transparent;
 }
