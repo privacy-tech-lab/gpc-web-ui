@@ -520,7 +520,6 @@ tbody tr:hover td.col-sticky {
 .column-item span {
   flex: 1;
   min-width: 0;
-  /* allow flex child to shrink for ellipsis */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -596,7 +595,6 @@ tbody tr:hover td.col-sticky {
   width: 100%;
 }
 
-/* Ensure the header text takes available space but respects truncation if needed */
 .header-wrapper .header-content {
   flex: 1;
   margin-right: 6px;
@@ -618,14 +616,12 @@ tbody tr:hover td.col-sticky {
   width: 18px;
   height: 18px;
   background-color: var(--brand);
-  /* Use brand green */
   color: #fff;
   border-radius: 50%;
   font-size: 11px;
   font-weight: bold;
   line-height: 1;
   text-decoration: none;
-  /* Remove any underline */
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
@@ -639,11 +635,8 @@ tbody tr:hover td.col-sticky {
   padding: 8px 12px;
   position: absolute;
   z-index: 999;
-  /* Higher z-index */
   top: 125%;
-  /* Position below the icon */
   bottom: auto;
-  /* Reset bottom */
   left: 50%;
   margin-left: -125px;
   opacity: 0;
@@ -656,12 +649,10 @@ tbody tr:hover td.col-sticky {
   pointer-events: none;
 }
 
-/* Tooltip arrow pointing up */
 .tooltip-text::after {
   content: "";
   position: absolute;
   bottom: 100%;
-  /* Position at top of bubble */
   top: auto;
   left: 50%;
   margin-left: -5px;
