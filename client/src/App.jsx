@@ -39,6 +39,40 @@ function App() {
 
   const availableStates = ["CA", "CT", "CO", "NJ"];
 
+  const headerDefinitions = {
+    "Site URL": "The URL of the website being analyzed.",
+    "site_id": "Unique identifier for the site.",
+    "status": "Current crawl status of the site.",
+    "domain": "The domain name of the site.",
+    "sent_gpc": "Whether the Global Privacy Control signal was sent.",
+    "gpp_version": "Version of the Global Privacy Platform detected.",
+    "uspapi_before_gpc": "USP API state before GPC signal was sent.",
+    "uspapi_after_gpc": "USP API state after GPC signal was sent.",
+    "usp_cookies_before_gpc": "USP cookies present before GPC signal.",
+    "usp_cookies_after_gpc": "USP cookies present after GPC signal.",
+    "OptanonConsent_before_gpc": "Optanon consent string before GPC.",
+    "OptanonConsent_after_gpc": "Optanon consent string after GPC.",
+    "gpp_before_gpc": "GPP string before GPC signal.",
+    "gpp_after_gpc": "GPP string after GPC signal.",
+    "urlClassification": "Classification of the URL (e.g., commercial, educational).",
+    "OneTrustWPCCPAGoogleOptOut_before_gpc": "OneTrust CCPA Google OptOut status before GPC.",
+    "OneTrustWPCCPAGoogleOptOut_after_gpc": "OneTrust CCPA Google OptOut status after GPC.",
+    "OTGPPConsent_before_gpc": "OneTrust GPP Consent status before GPC.",
+    "OTGPPConsent_after_gpc": "OneTrust GPP Consent status after GPC.",
+    "usps_before_gpc": "US Privacy String before GPC.",
+    "usps_after_gpc": "US Privacy String after GPC.",
+    "decoded_gpp_before_gpc": "Decoded GPP string before GPC.",
+    "decoded_gpp_after_gpc": "Decoded GPP string after GPC.",
+    "USPS implementation": "Implementation details of the US Privacy String.",
+    "error": "Any errors encountered during analysis.",
+    "Well-known": "Status of the .well-known/gpc resource.",
+    "Tranco": "Tranco rank of the site.",
+    "third_party_count": "Number of third-party domains detected.",
+    "third_party_urls": "List of third-party URLs detected.",
+    "unique_ad_networks": "List of unique ad networks found.",
+    "num_unique_ad_networks": "Count of unique ad networks found.",
+  };
+
   const dataTypes = useMemo(
     () => [
       { key: "all", label: "All data" },
@@ -597,7 +631,19 @@ function App() {
                         h === firstStickyColumn ? "col-sticky" : undefined
                       }
                     >
-                      <span className="header-content">{h}</span>
+                      {headerDefinitions[h] ? (
+                        <div className="header-wrapper">
+                          <span className="header-content">{h}</span>
+                          <span className="tooltip-container">
+                            <span className="tooltip-icon">?</span>
+                            <span className="tooltip-text">
+                              {headerDefinitions[h]}
+                            </span>
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="header-content">{h}</span>
+                      )}
                     </th>
                   ))}
                 </tr>

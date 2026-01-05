@@ -88,7 +88,8 @@ a:hover {
      Container & Controls
   --------------------------- */
 .controls {
-  display: none; /* legacy */
+  display: none;
+  /* legacy */
 }
 
 .toolbar {
@@ -246,6 +247,7 @@ td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .cell-content {
   display: block;
   max-width: var(--table-cell-max, 320px);
@@ -262,6 +264,10 @@ th {
   font-weight: 600;
   color: #333;
   text-align: left;
+}
+
+th:hover {
+  z-index: 20;
 }
 
 td {
@@ -289,21 +295,25 @@ td.col-sticky {
   position: sticky;
   left: 0;
 }
+
 th.col-sticky {
   z-index: 3;
   background: #f2f6fa;
   box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
   border-right: 1px solid #dfe6ec;
 }
+
 td.col-sticky {
   z-index: 2;
   background: var(--surface);
   box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
   border-right: 1px solid #dfe6ec;
 }
+
 tbody tr:nth-child(even) td.col-sticky {
   background: #fafcff;
 }
+
 tbody tr:hover td.col-sticky {
   background: #f5faff !important;
 }
@@ -477,6 +487,7 @@ tbody tr:hover td.col-sticky {
   max-width: 1000px;
   margin: 12px auto 20px;
 }
+
 .column-picker-header {
   display: flex;
   align-items: center;
@@ -484,15 +495,18 @@ tbody tr:hover td.col-sticky {
   gap: 8px;
   margin-bottom: 10px;
 }
+
 .column-picker-actions {
   display: flex;
   gap: 8px;
 }
+
 .column-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
 }
+
 .column-item {
   display: flex;
   align-items: center;
@@ -505,7 +519,8 @@ tbody tr:hover td.col-sticky {
 
 .column-item span {
   flex: 1;
-  min-width: 0; /* allow flex child to shrink for ellipsis */
+  min-width: 0;
+  /* allow flex child to shrink for ellipsis */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -521,6 +536,7 @@ tbody tr:hover td.col-sticky {
   max-width: 1000px;
   margin: 12px auto 20px;
 }
+
 .kpi {
   background: var(--surface);
   border: 1px solid #eee;
@@ -528,11 +544,13 @@ tbody tr:hover td.col-sticky {
   padding: 12px 14px;
   text-align: center;
 }
+
 .kpi-value {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--brand-dark);
 }
+
 .kpi-label {
   color: var(--muted);
   font-size: 0.9rem;
@@ -545,6 +563,7 @@ tbody tr:hover td.col-sticky {
   #table-wrapper {
     width: 95%;
   }
+
   table {
     min-width: 600px;
   }
@@ -555,12 +574,103 @@ tbody tr:hover td.col-sticky {
     flex-direction: column;
     align-items: stretch;
   }
+
   .toolbar select,
   .toolbar button,
   .toolbar input[type="text"] {
     width: 100%;
   }
+
   .kpis {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------------------
+     Tooltip Styles
+  --------------------------- */
+.header-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+/* Ensure the header text takes available space but respects truncation if needed */
+.header-wrapper .header-content {
+  flex: 1;
+  margin-right: 6px;
+}
+
+.tooltip-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background-color: var(--brand);
+  /* Use brand green */
+  color: #fff;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1;
+  text-decoration: none;
+  /* Remove any underline */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.tooltip-text {
+  visibility: hidden;
+  width: 250px;
+  background-color: #333;
+  color: #fff;
+  text-align: left;
+  border-radius: 6px;
+  padding: 8px 12px;
+  position: absolute;
+  z-index: 999;
+  /* Higher z-index */
+  top: 125%;
+  /* Position below the icon */
+  bottom: auto;
+  /* Reset bottom */
+  left: 50%;
+  margin-left: -125px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  font-weight: normal;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  white-space: normal;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+/* Tooltip arrow pointing up */
+.tooltip-text::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  /* Position at top of bubble */
+  top: auto;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent transparent #333 transparent;
+}
+
+.tooltip-container:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
 }
