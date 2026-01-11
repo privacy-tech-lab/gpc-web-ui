@@ -40,73 +40,53 @@ function App() {
 
   const availableStates = ["CA", "CT", "CO", "NJ"];
 
-  const headerFriendlyNames = {
-    "Site URL": "Site URL",
-    "site_id": "Site ID",
-    "status": "Status",
-    "domain": "Domain",
-    "sent_gpc": "GPC Signal Sent",
-    "gpp_version": "GPP Version",
-    "uspapi_before_gpc": "USP API (Before GPC)",
-    "uspapi_after_gpc": "USP API (After GPC)",
-    "usp_cookies_before_gpc": "USP Cookies (Before GPC)",
-    "usp_cookies_after_gpc": "USP Cookies (After GPC)",
-    "OptanonConsent_before_gpc": "Optanon Consent (Before GPC)",
-    "OptanonConsent_after_gpc": "Optanon Consent (After GPC)",
-    "gpp_before_gpc": "GPP String (Before GPC)",
-    "gpp_after_gpc": "GPP String (After GPC)",
-    "urlClassification": "URL Classification",
-    "OneTrustWPCCPAGoogleOptOut_before_gpc": "OneTrust CCPA OptOut (Before)",
-    "OneTrustWPCCPAGoogleOptOut_after_gpc": "OneTrust CCPA OptOut (After)",
-    "OTGPPConsent_before_gpc": "OneTrust GPP Consent (Before)",
-    "OTGPPConsent_after_gpc": "OneTrust GPP Consent (After)",
-    "usps_before_gpc": "US Privacy String (Before)",
-    "usps_after_gpc": "US Privacy String (After)",
-    "decoded_gpp_before_gpc": "Decoded GPP (Before)",
-    "decoded_gpp_after_gpc": "Decoded GPP (After)",
-    "USPS implementation": "USPS Implementation",
-    "error": "Error",
-    "Well-known": "Well-Known Resource",
-    "Tranco": "Tranco Rank",
-    "third_party_count": "Third-Party Count",
-    "third_party_urls": "Third-Party URLs",
-    "unique_ad_networks": "Unique Ad Networks",
-    "num_unique_ad_networks": "Ad Networks Count",
-  };
+  const [descriptionsOfColumns, setDescriptionsOfColumns] = useState({});
+  const [headerFriendlyNames, setHeaderFriendlyNames] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/descriptions_of_columns.json")
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(
+            new Error("Failed to load descriptions_of_columns.json")
+          )
+      )
+      .then((data) => {
+        if (!cancelled && data && typeof data === "object") {
+          setDescriptionsOfColumns(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load reason descriptions:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const headerDefinitions = {
-    "Site URL": "The full URL of the website that was analyzed by the crawler.",
-    "site_id": "A unique numerical identifier assigned to the site within the dataset.",
-    "status": "The current processing status of the site (e.g., 'added', 'not added').",
-    "domain": "The root domain name of the site (e.g., 'example.com').",
-    "sent_gpc": "Indicates whether the Global Privacy Control (GPC) signal was effectively sent to the site during the crawl.",
-    "gpp_version": "The version of the IAB Global Privacy Platform (GPP) detected on the site.",
-    "uspapi_before_gpc": "The value returned by the U.S. Privacy API (__uspapi) BEFORE the GPC signal was sent. This API allows vendors to query a user's privacy preferences.",
-    "uspapi_after_gpc": "The value returned by the U.S. Privacy API (__uspapi) AFTER the GPC signal was sent. We check if the 3rd character changes to 'Y' such as '1NNN' -> '1NYN' (Yes, opted out). If it is 'N' (No, not opted out) and other fields also don't recognize the GPC signal, we consider it a potential non-compliance.",
-    "usp_cookies_before_gpc": "The content of the 'usprivacy' cookie BEFORE the GPC signal was sent. This cookie stores the U.S. Privacy String.",
-    "usp_cookies_after_gpc": "The content of the 'usprivacy' cookie AFTER the GPC signal was sent.  We check if the 3rd character changes to 'Y' such as '1NNN' -> '1NYN' (Yes, opted out). If it is 'N' (No, not opted out) and other fields also don't recognize the GPC signal, we consider it a potential non-compliance.",
-    "OptanonConsent_before_gpc": "The value of the OneTrust 'OptanonConsent' cookie BEFORE the GPC signal. This cookie manages user consent preferences.",
-    "OptanonConsent_after_gpc": "The value of the OneTrust 'OptanonConsent' cookie AFTER the GPC signal. We look for 'isGpcEnabled=1' to see if GPC is respected. If 'isGpcEnabled=0' and other fields also don't recognize the GPC signal, we consider it a potential non-compliance.",
-    "gpp_before_gpc": "The raw IAB Global Privacy Platform (GPP) string detected BEFORE the GPC signal was sent.",
-    "gpp_after_gpc": "The raw IAB Global Privacy Platform (GPP) string detected AFTER the GPC signal was sent.",
-    "urlClassification": "Categorization of the URLs on the page by Firefox (e.g. 'tracking_ads' vs 'tracking_social').",
-    "OneTrustWPCCPAGoogleOptOut_before_gpc": "Status of the OneTrust CCPA Google Opt-Out mechanism BEFORE GPC signal.",
-    "OneTrustWPCCPAGoogleOptOut_after_gpc": "Status of the OneTrust CCPA Google Opt-Out mechanism AFTER GPC signal.",
-    "OTGPPConsent_before_gpc": "OneTrust-specific GPP consent status BEFORE GPC signal.",
-    "OTGPPConsent_after_gpc": "OneTrust-specific GPP consent status AFTER GPC signal.",
-    "usps_before_gpc": "The U.S. Privacy String (USPS) detected BEFORE GPC. Character 3 ('Y'/'N') indicates if the user has opted out of sale. For example, '1YYN' indicates the user was opted out of sale, while '1YNN' indicates they were not.",
-    "usps_after_gpc": "The U.S. Privacy String (USPS) detected AFTER GPC. We check if the 3rd character changes to 'Y' such as '1NNN' -> '1NYN' (Yes, opted out). If it is 'N' (No, not opted out) and other fields also don't recognize the GPC signal, we consider it a potential non-compliance.",
-    "decoded_gpp_before_gpc": "The human-readable contents of the GPP string (decoded) BEFORE GPC. Shows which sections (e.g., uscav1) are present.",
-    "decoded_gpp_after_gpc": "The human-readable contents of the GPP string (decoded) AFTER GPC. We check for 'SaleOptOut' or 'SharingOptOut' flags here.",
-    "USPS implementation": "Details on how the site implements the US Privacy String (e.g., via API, Cookie, or both).",
-    "error": "Any error message logged during the crawl (e.g., timeouts, connection refusals).",
-    "Well-known": "Status of the /.well-known/gpc.json resource, which allows sites to publicly declare GPC support.",
-    "Tranco": "The site's traffic rank from the Tranco list. Lower numbers mean higher traffic.",
-    "third_party_count": "The total number of unique third-party domains detected on the site.",
-    "third_party_urls": "A list of the specific third-party URLs that were detected.",
-    "unique_ad_networks": "Names of unique advertising networks identified on the site.",
-    "num_unique_ad_networks": "The count of unique advertising networks identified.",
-  };
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/header_friendly_names.json")
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(
+            new Error("Failed to load header_friendly_names.json")
+          )
+      )
+      .then((data) => {
+        if (!cancelled && data && typeof data === "object") {
+          setHeaderFriendlyNames(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load header friendly names:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const dataTypes = useMemo(
     () => [
@@ -666,13 +646,13 @@ function App() {
                         h === firstStickyColumn ? "col-sticky" : undefined
                       }
                     >
-                      {headerDefinitions[h] ? (
+                      {descriptionsOfColumns[h] ? (
                         <div className="header-wrapper">
                           <span className="header-content">
                             {headerFriendlyNames[h] || h}
                           </span>
                           <Tooltip
-                            content={headerDefinitions[h]}
+                            content={descriptionsOfColumns[h]}
                             position="bottom"
                           >
                             <span className="tooltip-icon">?</span>

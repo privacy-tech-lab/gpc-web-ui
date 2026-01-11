@@ -8,7 +8,6 @@ import {
   LineElement,
   BarElement,
   Title,
-  Tooltip,
   Legend,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
@@ -20,11 +19,10 @@ ChartJS.register(
   LineElement,
   BarElement,
   Title,
-  Tooltip,
   Legend
 );
 
-import TooltipComponent from "./components/Tooltip";
+import Tooltip from "./components/Tooltip";
 
 function parseReasons(value) {
   if (!value) return [];
@@ -380,7 +378,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
           ].map((reason) => {
             const active = selectedReasons?.includes(reason);
             return (
-              <TooltipComponent
+              <Tooltip
                 key={reason}
                 content={reasonDescriptions[reason]}
                 position="top"
@@ -399,7 +397,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
                     {reason}
                   </button>
                 </div>
-              </TooltipComponent>
+              </Tooltip>
             );
           })}
         </div>
