@@ -8,7 +8,6 @@ import {
   LineElement,
   BarElement,
   Title,
-  Tooltip,
   Legend,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
@@ -20,9 +19,10 @@ ChartJS.register(
   LineElement,
   BarElement,
   Title,
-  Tooltip,
   Legend
 );
+
+import Tooltip from "./components/Tooltip";
 
 function parseReasons(value) {
   if (!value) return [];
@@ -41,7 +41,7 @@ function parseReasons(value) {
     if (Array.isArray(parsed)) {
       return parsed.map((v) => String(v).trim()).filter(Boolean);
     }
-  } catch (_) {}
+  } catch (_) { }
   return str
     .replace(/^\[|\]$/g, "")
     .split(",")
@@ -115,8 +115,8 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         res.ok
           ? res.json()
           : Promise.reject(
-              new Error("Failed to load classifications_of_compliance.json")
-            )
+            new Error("Failed to load classifications_of_compliance.json")
+          )
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -378,25 +378,26 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
           ].map((reason) => {
             const active = selectedReasons?.includes(reason);
             return (
-              <div key={reason} className="chart-reason-tooltip-wrapper">
-                <button
-                  className={`chip${active ? " chip--active" : ""}`}
-                  onClick={() => {
-                    setSelectedReasons((prev) =>
-                      prev.includes(reason)
-                        ? prev.filter((r) => r !== reason)
-                        : [...prev, reason]
-                    );
-                  }}
-                >
-                  {reason}
-                </button>
-                {reasonDescriptions[reason] ? (
-                  <div className="chart-reason-tooltip">
-                    {reasonDescriptions[reason]}
-                  </div>
-                ) : null}
-              </div>
+              <Tooltip
+                key={reason}
+                content={reasonDescriptions[reason]}
+                position="top"
+              >
+                <div className="chart-reason-tooltip-wrapper">
+                  <button
+                    className={`chip${active ? " chip--active" : ""}`}
+                    onClick={() => {
+                      setSelectedReasons((prev) =>
+                        prev.includes(reason)
+                          ? prev.filter((r) => r !== reason)
+                          : [...prev, reason]
+                      );
+                    }}
+                  >
+                    {reason}
+                  </button>
+                </div>
+              </Tooltip>
             );
           })}
         </div>

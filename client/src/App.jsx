@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
+import Tooltip from "./components/Tooltip";
 
 function App() {
   const [headers, setHeaders] = useState([]);
@@ -38,6 +39,54 @@ function App() {
   };
 
   const availableStates = ["CA", "CT", "CO", "NJ"];
+
+  const [descriptionsOfColumns, setDescriptionsOfColumns] = useState({});
+  const [headerFriendlyNames, setHeaderFriendlyNames] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/descriptions_of_columns.json")
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(
+            new Error("Failed to load descriptions_of_columns.json")
+          )
+      )
+      .then((data) => {
+        if (!cancelled && data && typeof data === "object") {
+          setDescriptionsOfColumns(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load reason descriptions:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/header_friendly_names.json")
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(
+            new Error("Failed to load header_friendly_names.json")
+          )
+      )
+      .then((data) => {
+        if (!cancelled && data && typeof data === "object") {
+          setHeaderFriendlyNames(data);
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to load header friendly names:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const dataTypes = useMemo(
     () => [
@@ -597,7 +646,23 @@ function App() {
                         h === firstStickyColumn ? "col-sticky" : undefined
                       }
                     >
-                      <span className="header-content">{h}</span>
+                      {descriptionsOfColumns[h] ? (
+                        <div className="header-wrapper">
+                          <span className="header-content">
+                            {headerFriendlyNames[h] || h}
+                          </span>
+                          <Tooltip
+                            content={descriptionsOfColumns[h]}
+                            position="bottom"
+                          >
+                            <span className="tooltip-icon">?</span>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <span className="header-content">
+                          {headerFriendlyNames[h] || h}
+                        </span>
+                      )}
                     </th>
                   ))}
                 </tr>

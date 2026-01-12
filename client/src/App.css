@@ -88,7 +88,8 @@ a:hover {
      Container & Controls
   --------------------------- */
 .controls {
-  display: none; /* legacy */
+  display: none;
+  /* legacy */
 }
 
 .toolbar {
@@ -246,6 +247,7 @@ td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .cell-content {
   display: block;
   max-width: var(--table-cell-max, 320px);
@@ -289,21 +291,25 @@ td.col-sticky {
   position: sticky;
   left: 0;
 }
+
 th.col-sticky {
   z-index: 3;
   background: #f2f6fa;
   box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
   border-right: 1px solid #dfe6ec;
 }
+
 td.col-sticky {
   z-index: 2;
   background: var(--surface);
   box-shadow: 4px 0 6px rgba(0, 0, 0, 0.06);
   border-right: 1px solid #dfe6ec;
 }
+
 tbody tr:nth-child(even) td.col-sticky {
   background: #fafcff;
 }
+
 tbody tr:hover td.col-sticky {
   background: #f5faff !important;
 }
@@ -427,44 +433,7 @@ tbody tr:hover td.col-sticky {
 /* ---------------------------
      Chart Reason Tooltips
   --------------------------- */
-.chart-reason-tooltip-wrapper {
-  position: relative;
-}
-
-.chart-reason-tooltip {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(17, 17, 17, 0.85);
-  color: #fff;
-  padding: 8px 10px;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  width: 280px;
-  max-width: 80vw;
-  font-size: 12px;
-  line-height: 1.4;
-  text-align: left;
-  white-space: normal;
-  z-index: 20;
-}
-
-.chart-reason-tooltip-wrapper:hover .chart-reason-tooltip {
-  display: block;
-}
-
-.chart-reason-tooltip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 6px;
-  border-style: solid;
-  border-color: rgba(17, 17, 17, 0.95) transparent transparent transparent;
-}
+/* Unified into general Tooltip Styles */
 
 .chart-area {
   height: 360px;
@@ -477,6 +446,7 @@ tbody tr:hover td.col-sticky {
   max-width: 1000px;
   margin: 12px auto 20px;
 }
+
 .column-picker-header {
   display: flex;
   align-items: center;
@@ -484,15 +454,18 @@ tbody tr:hover td.col-sticky {
   gap: 8px;
   margin-bottom: 10px;
 }
+
 .column-picker-actions {
   display: flex;
   gap: 8px;
 }
+
 .column-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
 }
+
 .column-item {
   display: flex;
   align-items: center;
@@ -505,7 +478,7 @@ tbody tr:hover td.col-sticky {
 
 .column-item span {
   flex: 1;
-  min-width: 0; /* allow flex child to shrink for ellipsis */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -521,6 +494,7 @@ tbody tr:hover td.col-sticky {
   max-width: 1000px;
   margin: 12px auto 20px;
 }
+
 .kpi {
   background: var(--surface);
   border: 1px solid #eee;
@@ -528,11 +502,13 @@ tbody tr:hover td.col-sticky {
   padding: 12px 14px;
   text-align: center;
 }
+
 .kpi-value {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--brand-dark);
 }
+
 .kpi-label {
   color: var(--muted);
   font-size: 0.9rem;
@@ -545,6 +521,7 @@ tbody tr:hover td.col-sticky {
   #table-wrapper {
     width: 95%;
   }
+
   table {
     min-width: 600px;
   }
@@ -555,12 +532,97 @@ tbody tr:hover td.col-sticky {
     flex-direction: column;
     align-items: stretch;
   }
+
   .toolbar select,
   .toolbar button,
   .toolbar input[type="text"] {
     width: 100%;
   }
+
   .kpis {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------------------
+     Tooltip Styles (Unified via Portal)
+  --------------------------- */
+.header-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.header-wrapper .header-content {
+  flex: 1;
+  margin-right: 6px;
+}
+
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background-color: var(--brand);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.tooltip-portal-content {
+  position: absolute;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: #fff;
+  text-align: left;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: normal;
+  line-height: 1.4;
+  white-space: normal;
+  width: max-content;
+  max-width: 250px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  z-index: 99999;
+}
+
+
+.tooltip-portal-content::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+}
+
+.tooltip--top {
+  transform: translate(-50%, -100%);
+}
+
+.tooltip--top::after {
+  top: 100%;
+  border-color: #333 transparent transparent transparent;
+}
+
+.tooltip--bottom::after {
+  bottom: 100%;
+  border-color: transparent transparent #333 transparent;
 }
