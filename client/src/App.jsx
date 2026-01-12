@@ -49,8 +49,8 @@ function App() {
         res.ok
           ? res.json()
           : Promise.reject(
-            new Error("Failed to load descriptions_of_columns.json")
-          )
+              new Error("Failed to load descriptions_of_columns.json")
+            )
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -72,8 +72,8 @@ function App() {
         res.ok
           ? res.json()
           : Promise.reject(
-            new Error("Failed to load header_friendly_names.json")
-          )
+              new Error("Failed to load header_friendly_names.json")
+            )
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -234,6 +234,11 @@ function App() {
     return cols && cols.length > 0 ? cols[0] : undefined;
   }, [visibleColumns, displayHeaders]);
 
+  const structuredColumns = useMemo(
+    () => new Set(["urlclassification", "third_party_urls"]),
+    []
+  );
+
   const pncReasonList = useMemo(
     () => [
       "Invalid_uspapi",
@@ -299,6 +304,113 @@ function App() {
     () => filteredRows.slice(startIndex, endIndex),
     [filteredRows, startIndex, endIndex]
   );
+
+  function renderJSONCell(raw) {
+    try {
+      const parseJsonLike = (input) => {
+        if (typeof input !== "string") return input;
+        const s = input.trim();
+        try {
+          return JSON.parse(s);
+        } catch {
+          // Try to normalize Python/JSON-ish strings with single quotes and None/True/False
+          const normalized = s
+            .replace(/'/g, '"')
+            .replace(/\bNone\b/g, "null")
+            .replace(/\bTrue\b/g, "true")
+            .replace(/\bFalse\b/g, "false");
+          try {
+            return JSON.parse(normalized);
+          } catch {
+            return input;
+          }
+        }
+      };
+
+      const obj = typeof raw === "string" ? parseJsonLike(raw) : raw;
+      if (!obj || typeof obj !== "object") return String(raw ?? "");
+
+      const humanizeKey = (key) => {
+        return String(key || "")
+          .replace(/_/g, " ")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+      };
+
+      // Normalize values into string lists (arrays or object-of-arrays)
+      const toStringList = (value) => {
+        if (Array.isArray(value)) return value.map((v) => String(v));
+        if (value && typeof value === "object") {
+          const out = [];
+          for (const subVal of Object.values(value)) {
+            if (Array.isArray(subVal))
+              out.push(...subVal.map((v) => String(v)));
+            else if (typeof subVal === "string") out.push(subVal);
+            else if (typeof subVal === "number" || typeof subVal === "boolean")
+              out.push(String(subVal));
+          }
+          return out;
+        }
+        if (value == null) return [];
+        if (typeof value === "string") {
+          const s = value.trim();
+          const parsed = parseJsonLike(s);
+          if (Array.isArray(parsed)) return parsed.map((v) => String(v));
+          if (s.includes(",") || s.includes(";")) {
+            return s
+              .split(/[,;]+/)
+              .map((part) => part.trim())
+              .filter(Boolean);
+          }
+          return [s];
+        }
+        return [String(value)];
+      };
+
+      const rows = [];
+      for (const [topKey, topVal] of Object.entries(obj)) {
+        if (topVal && typeof topVal === "object" && !Array.isArray(topVal)) {
+          const subEntries = Object.entries(topVal);
+          if (subEntries.length === 0) {
+            rows.push(
+              <div key={`row-${topKey}`} className="uc-row">
+                <span className="uc-label">{humanizeKey(topKey)}:</span>
+                <span className="uc-domains">None</span>
+              </div>
+            );
+          } else {
+            for (const [subKey, subVal] of subEntries) {
+              const items = toStringList(subVal);
+              rows.push(
+                <div key={`row-${topKey}-${subKey}`} className="uc-row">
+                  <span className="uc-label">{humanizeKey(subKey)}:</span>
+                  <span className="uc-domains">
+                    {items.length > 0 ? items.join(", ") : "None"}
+                  </span>
+                </div>
+              );
+            }
+          }
+        } else {
+          const items = toStringList(topVal);
+          rows.push(
+            <div key={`row-${topKey}`} className="uc-row">
+              <span className="uc-label">{humanizeKey(topKey)}:</span>
+              <span className="uc-domains">
+                {items.length > 0 ? items.join(", ") : "None"}
+              </span>
+            </div>
+          );
+        }
+      }
+
+      return rows.length > 0 ? <>{rows}</> : "None";
+    } catch {
+      return String(raw ?? "");
+    }
+  }
 
   const handleExportFiltered = () => {
     try {
@@ -687,9 +799,15 @@ function App() {
                             .join(" ") || undefined
                         }
                       >
-                        <span className="cell-content">
-                          {String(row[h] ?? "")}
-                        </span>
+                        {h && structuredColumns.has(String(h).toLowerCase()) ? (
+                          <span className="cell-content">
+                            {renderJSONCell(row[h])}
+                          </span>
+                        ) : (
+                          <span className="cell-content">
+                            {String(row[h] ?? "")}
+                          </span>
+                        )}
                       </td>
                     ))}
                   </tr>

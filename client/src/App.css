@@ -256,6 +256,32 @@ td {
   white-space: nowrap;
 }
 
+.cell-content--multiline {
+  max-width: var(--table-cell-max, 320px);
+  white-space: normal;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 140px;
+}
+
+/* urlClassification formatting */
+.uc-row {
+  margin: 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.uc-label {
+  font-weight: 600;
+  color: #374151;
+  margin-right: 4px;
+}
+.uc-domains {
+  color: #4b5563;
+}
+.uc-more {
+  color: #6b7280;
+}
+
 th {
   background-color: #f2f6fa;
   position: sticky;
@@ -602,7 +628,6 @@ tbody tr:hover td.col-sticky {
   pointer-events: none;
   z-index: 99999;
 }
-
 
 .tooltip-portal-content::after {
   content: "";
