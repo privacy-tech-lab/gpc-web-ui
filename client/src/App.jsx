@@ -20,6 +20,7 @@ function App() {
       { key: "FebMar2025", label: "Feb-Mar 2025" },
       { key: "May2025", label: "May 2025" },
       { key: "August2025", label: "August 2025" },
+      {key: "Jan2026", label: "January 2026"}
     ],
     []
   );
@@ -32,6 +33,7 @@ function App() {
       "FebMar2025",
       "May2025",
       "August2025",
+      "Jan2026",
     ],
     CT: ["FebMar2025", "May2025", "August2025"],
     CO: ["FebMar2025", "May2025"],
@@ -235,7 +237,7 @@ function App() {
   }, [visibleColumns, displayHeaders]);
 
   const structuredColumns = useMemo(
-    () => new Set(["urlclassification", "third_party_urls"]),
+    () => new Set(["urlclassification", "third_party_urls", "unique_ad_networks"]),
     []
   );
 
@@ -368,6 +370,12 @@ function App() {
         }
         return [String(value)];
       };
+
+      // If the parsed value is a top-level array, render as a comma-separated list
+      if (Array.isArray(obj)) {
+        const items = toStringList(obj);
+        return items.length > 0 ? items.join(", ") : "None";
+      }
 
       const rows = [];
       for (const [topKey, topVal] of Object.entries(obj)) {
