@@ -237,7 +237,7 @@ function App() {
   }, [visibleColumns, displayHeaders]);
 
   const structuredColumns = useMemo(
-    () => new Set(["urlclassification", "third_party_urls", "unique_ad_networks"]),
+    () => new Set(["urlclassification", "third_party_urls", "unique_ad_networks", "decoded_gpp_before_gpc", "decoded_gpp_after_gpc"]),
     []
   );
 
