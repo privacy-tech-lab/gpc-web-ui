@@ -389,10 +389,15 @@ function App() {
               </div>
             );
           } else {
+            rows.push(
+              <div key={`header-${topKey}`} className="uc-row">
+                <span className="uc-label" style={{ fontWeight: 700 }}>{humanizeKey(topKey)}:</span>
+              </div>
+            );
             for (const [subKey, subVal] of subEntries) {
               const items = toStringList(subVal);
               rows.push(
-                <div key={`row-${topKey}-${subKey}`} className="uc-row">
+                <div key={`row-${topKey}-${subKey}`} className="uc-row" style={{ paddingLeft: "0.75em" }}>
                   <span className="uc-label">{humanizeKey(subKey)}:</span>
                   <span className="uc-domains">
                     {items.length > 0 ? items.join(", ") : "None"}
