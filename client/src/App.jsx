@@ -20,7 +20,7 @@ function App() {
       { key: "FebMar2025", label: "Feb-Mar 2025" },
       { key: "May2025", label: "May 2025" },
       { key: "August2025", label: "August 2025" },
-      {key: "Jan2026", label: "January 2026"}
+      { key: "Jan2026", label: "January 2026" },
     ],
     []
   );
