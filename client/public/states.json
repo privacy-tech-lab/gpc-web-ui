@@ -1,0 +1,18 @@
+{
+    "Colorado": {
+        "all_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/CO/Crawl_Data_CO%20-%20May2025.csv",
+        "noncompliant_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/CO/Crawl_Data_CO%20-%20PotentiallyNonCompliantSitesMay2025.csv"
+    },
+    "California": {
+        "all_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/CA/Crawl_Data_CA%20-%20May2025.csv",
+        "noncompliant_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/CA/Crawl_Data_CA%20-%20PotentiallyNonCompliantSitesMay2025.csv"
+    },
+    "New Jersey": {
+        "all_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/NJ/Crawl_Data_NJ%20-%20August2025.csv",
+        "noncompliant_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/NJ/Crawl_Data_NJ%20-%20PotentiallyNonCompliantSitesAugust2025.csv"
+    },
+    "Connecticut": {
+        "all_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/CT/Crawl_Data_CT%20-%20August2025.csv",
+        "noncompliant_sites": "https://github.com/privacy-tech-lab/gpc-web-ui/blob/5ad74cb9f768a1c3b572609eae64067183007fb2/client/public/CT/Crawl_Data_CT%20-%20PotentiallyNonCompliantSitesAugust2025.csv"
+    }
+}
