@@ -3,6 +3,7 @@ import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 import Tooltip from "./components/Tooltip";
+import { renderJSONCell } from "./utils/renderJSONCell";
 
 function App() {
   const [headers, setHeaders] = useState([]);
@@ -51,8 +52,8 @@ function App() {
         res.ok
           ? res.json()
           : Promise.reject(
-            new Error("Failed to load descriptions_of_columns.json")
-          )
+              new Error("Failed to load descriptions_of_columns.json")
+            )
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -74,8 +75,8 @@ function App() {
         res.ok
           ? res.json()
           : Promise.reject(
-            new Error("Failed to load header_friendly_names.json")
-          )
+              new Error("Failed to load header_friendly_names.json")
+            )
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -235,6 +236,11 @@ function App() {
         : displayHeaders;
     return cols && cols.length > 0 ? cols[0] : undefined;
   }, [visibleColumns, displayHeaders]);
+
+  const structuredColumns = useMemo(
+    () => new Set(["urlclassification", "third_party_urls", "unique_ad_networks", "decoded_gpp_before_gpc", "decoded_gpp_after_gpc"]),
+    []
+  );
 
   const pncReasonList = useMemo(
     () => [
@@ -689,9 +695,15 @@ function App() {
                             .join(" ") || undefined
                         }
                       >
-                        <span className="cell-content">
-                          {String(row[h] ?? "")}
-                        </span>
+                        {h && structuredColumns.has(String(h).toLowerCase()) ? (
+                          <span className="cell-content">
+                            {renderJSONCell(row[h])}
+                          </span>
+                        ) : (
+                          <span className="cell-content">
+                            {String(row[h] ?? "")}
+                          </span>
+                        )}
                       </td>
                     ))}
                   </tr>
