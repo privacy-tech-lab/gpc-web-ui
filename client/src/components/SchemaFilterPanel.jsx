@@ -127,16 +127,16 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
 
   const getExpectedTokensForState = (state) => {
     const stateObj = gppMap[state] || {};
-    const tokens = [];
+    const expectedTokens = [];
     const orderedFields = ["SaleOptOut", "SharingOptOut", "TargetedAdvertisingOptOut"].filter(
       (f) => stateObj[f]
     );
     orderedFields.forEach((field) => {
       ["opted_out", "did_not_opt_out", "invalid_missing", "not_applicable"].forEach((sk) => {
-        tokens.push(stateObj[field]?.[sk] || `gpp|${state}|${field}|${sk}`);
+        expectedTokens.push(stateObj[field]?.[sk] || `gpp|${state}|${field}|${sk}`);
       });
     });
-    return tokens;
+    return expectedTokens;
   };
 
   function toggleFamilyStatus(subset, allOn) {

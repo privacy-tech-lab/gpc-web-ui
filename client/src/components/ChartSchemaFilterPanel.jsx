@@ -17,8 +17,6 @@ import SchemaFilterPanel from "./SchemaFilterPanel.jsx";
  * Props:
  *  seriesOptions      – array of { key, label, description }
  *  selectedSeries     – array of active keys
- *  onSelectAll        – () => void
- *  onClearAll         – () => void
  *  onToggle           – (key) => void
  *  isSchemaMode       – boolean
  */
@@ -46,8 +44,6 @@ export default function ChartSchemaFilterPanel({
   seriesOptions,
   selectedSeries,
   selectedStates,
-  
-  
   onToggle,
   isSchemaMode,
 }) {

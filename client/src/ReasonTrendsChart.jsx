@@ -19,7 +19,6 @@ import {
   ANALYSIS_MODES,
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
-  
   sortSchemaTokens,
   parseSchemaToken,
 } from "./utils/schemaClassification.js";
@@ -633,8 +632,6 @@ export default function ReasonTrendsChart({
         seriesOptions={seriesOptions}
         selectedSeries={selectedSeries}
         selectedStates={selectedStates}
-        onSelectAll={() => setSelectedSeries(seriesOptions.map((o) => o.key))}
-        onClearAll={() => setSelectedSeries([])}
         onToggle={(key) =>
           setSelectedSeries((prev) =>
             prev.includes(key)

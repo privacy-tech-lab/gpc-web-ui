@@ -380,7 +380,6 @@ function App() {
     return base;
   }, [
     analysisMode,
-    isSchemaRowNonCompliant,
     rowRecords,
     schemaModeUnavailable,
     searchQuery,
@@ -487,7 +486,7 @@ function App() {
           <span className="mode-toolbar__hint">
             {analysisMode === ANALYSIS_MODES.LEGACY
               ? "Legacy mode uses the existing Reasons_Non_Compliant CSV columns."
-              : `Schema mode uses the ${SCHEMA_CLASSIFICATION_COLUMN} column. Select \"Non-compliant (schema)\" to see sites with any Did Not Opt Out classification.`}
+              : `Schema mode uses the ${SCHEMA_CLASSIFICATION_COLUMN} column. Select "Non-compliant (schema)" to see sites with any Did Not Opt Out classification.`}
           </span>
         </div>
       </div>
