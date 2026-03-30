@@ -25,6 +25,7 @@
     "USPS implementation": "USPS Implementation",
     "error": "Error",
     "Well-known": "Well-Known Resource",
+    "compliance_classification": "Schema Classification",
     "Tranco": "Tranco Rank",
     "third_party_count": "Third-Party Count",
     "third_party_urls": "Third-Party URLs",

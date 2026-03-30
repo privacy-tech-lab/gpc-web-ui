@@ -1,5 +1,3 @@
-import React from "react";
-
 function parseJsonLike(input) {
   if (typeof input !== "string") return input;
   const s = input.trim();
@@ -28,18 +26,41 @@ function humanizeKey(key) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function toStringList(value, parseJsonLikeFn) {
-  if (Array.isArray(value)) return value.map((v) => String(v));
+function formatInlineValue(value, parseJsonLikeFn) {
+  if (value == null) return "None";
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => formatInlineValue(item, parseJsonLikeFn))
+      .filter(Boolean)
+      .join(", ");
+  }
   if (value && typeof value === "object") {
-    const out = [];
-    for (const subVal of Object.values(value)) {
-      if (Array.isArray(subVal))
-        out.push(...subVal.map((v) => String(v)));
-      else if (typeof subVal === "string") out.push(subVal);
-      else if (typeof subVal === "number" || typeof subVal === "boolean")
-        out.push(String(subVal));
+    return Object.entries(value)
+      .map(([key, subValue]) => {
+        const formatted = formatInlineValue(subValue, parseJsonLikeFn);
+        return `${humanizeKey(key)}: ${formatted || "None"}`;
+      })
+      .join("; ");
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const parsed = parseJsonLikeFn(trimmed);
+    if (parsed !== value) {
+      return formatInlineValue(parsed, parseJsonLikeFn);
     }
-    return out;
+    return trimmed;
+  }
+  return String(value);
+}
+
+function toStringList(value, parseJsonLikeFn) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => formatInlineValue(item, parseJsonLikeFn))
+      .filter(Boolean);
+  }
+  if (value && typeof value === "object") {
+    return [formatInlineValue(value, parseJsonLikeFn)].filter(Boolean);
   }
   if (value == null) return [];
   if (typeof value === "string") {

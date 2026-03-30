@@ -25,6 +25,7 @@
     "USPS implementation": "Details on how the site implements the US Privacy String (e.g., via API, Cookie, or both).",
     "error": "Any error message logged during the crawl (e.g., timeouts, connection refusals).",
     "Well-known": "Status of the /.well-known/gpc.json resource, which allows sites to publicly declare GPC support.",
+    "compliance_classification": "Future per-site JSON schema classification payload. This column summarizes USPS, Optanon Consent, Well-Known, and GPP compliance outcomes in a structured format for schema mode charts and filters.",
     "Tranco": "The site's traffic rank from the Tranco list. Lower numbers mean higher traffic.",
     "third_party_count": "The total number of unique third-party domains detected on the site.",
     "third_party_urls": "A list of the specific third-party URLs that were detected.",
