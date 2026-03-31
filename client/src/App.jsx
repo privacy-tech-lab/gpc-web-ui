@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
@@ -138,24 +138,110 @@ function getRowSearchValue(row) {
     .toLowerCase();
 }
 
+const getParam = (keys, fallback) => {
+  if (typeof window === "undefined") return fallback;
+  const params = new URLSearchParams(window.location.search);
+  for (const k of keys) {
+    if (params.has(k)) return params.get(k);
+  }
+  return fallback;
+};
+
+const getArrayParam = (keys, fallback) => {
+  if (typeof window === "undefined") return fallback;
+  const params = new URLSearchParams(window.location.search);
+  for (const k of keys) {
+    const val = params.get(k);
+    if (val) return val.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return fallback;
+};
+
 function App() {
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [selectedTimePeriod, setSelectedTimePeriod] = useState("May2025");
-  const [selectedDataType, setSelectedDataType] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedState, setSelectedState] = useState("CA");
-  const [analysisMode, setAnalysisMode] = useState(ANALYSIS_MODES.SCHEMA);
-  const [selectedReasons, setSelectedReasons] = useState([]);
-  const [selectedSchemaTokens, setSelectedSchemaTokens] = useState([]);
+  const [currentPage, setCurrentPage] = useState(() => {
+    const p = parseInt(getParam(["page"], "1"), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  });
+  const [selectedTimePeriod, setSelectedTimePeriod] = useState(() =>
+    getParam(["period"], "May2025")
+  );
+  const [selectedDataType, setSelectedDataType] = useState(() =>
+    getParam(["datatype", "type"], "all")
+  );
+  const [searchQuery, setSearchQuery] = useState(() =>
+    getParam(["search", "url", "domain", "site"], "")
+  );
+  const hasScrolledToSearch = useRef(false);
+  const [selectedState, setSelectedState] = useState(() =>
+    getParam(["state"], "CA")
+  );
+  const [analysisMode, setAnalysisMode] = useState(() =>
+    getParam(["mode"], ANALYSIS_MODES.SCHEMA)
+  );
+  const [selectedReasons, setSelectedReasons] = useState(() =>
+    getArrayParam(["reasons"], [])
+  );
+  const [selectedSchemaTokens, setSelectedSchemaTokens] = useState(() =>
+    getArrayParam(["tokens", "schema"], [])
+  );
   const [showFilters, setShowFilters] = useState(true);
   const [descriptionsOfColumns, setDescriptionsOfColumns] = useState({});
   const [headerFriendlyNames, setHeaderFriendlyNames] = useState({});
   const [visibleColumns, setVisibleColumns] = useState([]);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+
+    if (currentPage !== 1) params.set("page", currentPage);
+    else params.delete("page");
+
+    if (selectedState !== "CA") params.set("state", selectedState);
+    else params.delete("state");
+
+    params.set("period", selectedTimePeriod);
+
+    if (selectedDataType !== "all") params.set("datatype", selectedDataType);
+    else params.delete("datatype");
+
+    if (searchQuery) params.set("search", searchQuery);
+    else {
+      params.delete("search");
+      params.delete("url");
+      params.delete("domain");
+      params.delete("site");
+    }
+
+    if (analysisMode !== ANALYSIS_MODES.SCHEMA) params.set("mode", analysisMode);
+    else params.delete("mode");
+
+    if (selectedReasons.length > 0) params.set("reasons", selectedReasons.join(","));
+    else params.delete("reasons");
+
+    if (selectedSchemaTokens.length > 0) params.set("tokens", selectedSchemaTokens.join(","));
+    else params.delete("tokens");
+
+    const newRelativePathQuery = window.location.pathname + "?" + params.toString();
+    const finalUrl = params.toString() ? newRelativePathQuery : window.location.pathname;
+
+    if (finalUrl !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, "", finalUrl);
+    }
+  }, [
+    currentPage,
+    selectedState,
+    selectedTimePeriod,
+    selectedDataType,
+    searchQuery,
+    analysisMode,
+    selectedReasons,
+    selectedSchemaTokens,
+  ]);
 
   const filePath = useMemo(
     () => buildPath(selectedTimePeriod, selectedDataType, selectedState),
@@ -275,6 +361,18 @@ function App() {
       cancelled = true;
     };
   }, [filePath]);
+
+  useEffect(() => {
+    if (!loading && searchQuery && !hasScrolledToSearch.current) {
+      const table = document.getElementById("table-wrapper");
+      if (table) {
+        setTimeout(() => {
+          table.scrollIntoView({ behavior: "smooth", block: "start" });
+          hasScrolledToSearch.current = true;
+        }, 100);
+      }
+    }
+  }, [loading, searchQuery]);
 
   const displayHeaders = useMemo(() => {
     if (headers.length > 0) return headers;
