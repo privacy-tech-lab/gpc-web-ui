@@ -9,8 +9,19 @@ import {
   BarElement,
   Title,
   Legend,
+  Tooltip as ChartTooltip,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
+
+import Tooltip from "./components/Tooltip";
+import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
+import {
+  ANALYSIS_MODES,
+  SCHEMA_CLASSIFICATION_COLUMN,
+  getSchemaClassificationForRow,
+  sortSchemaTokens,
+  parseSchemaToken,
+} from "./utils/schemaClassification.js";
 
 ChartJS.register(
   CategoryScale,
@@ -19,58 +30,72 @@ ChartJS.register(
   LineElement,
   BarElement,
   Title,
-  Legend
+  Legend,
+  ChartTooltip
 );
 
-import Tooltip from "./components/Tooltip";
+// ── Semantic color palettes keyed by compliance status ────────────────────────
+// Each palette has several shades so multiple same-status series stay distinct.
+const STATUS_COLOR_PALETTES = {
+  // Opted out → greens (compliant ✔)
+  opted_out: [
+    "#15803d", // rich forest green
+    "#16a34a", // medium green
+    "#166534", // dark pine
+    "#4ade80", // mint
+    "#059669", // emerald
+    "#22c55e", // bright green
+  ],
+  // Did not opt out → reds (non-compliant ✘)
+  did_not_opt_out: [
+    "#dc2626", // vivid red
+    "#b91c1c", // deep red
+    "#991b1b", // dark burgundy
+    "#ef4444", // bright red
+    "#e11d48", // rose red
+    "#f43f5e", // pink-red
+  ],
+  // Invalid / missing → ambers (warning ⚠️)
+  invalid_missing: [
+    "#d97706", // rich amber
+    "#b45309", // dark amber
+    "#f59e0b", // gold amber
+    "#92400e", // brown-amber
+    "#fbbf24", // bright yellow-amber
+  ],
+  invalid: [
+    "#ea580c", // burnt orange
+    "#c2410c", // dark orange
+    "#f97316", // bright orange
+    "#9a3412", // deep sienna
+  ],
+  // Not applicable → greys (neutral)
+  not_applicable: [
+    "#64748b", // slate
+    "#6b7280", // neutral grey
+    "#475569", // dark slate
+    "#94a3b8", // light slate
+    "#334155", // very dark slate
+  ],
+};
 
-function parseReasons(value) {
-  if (!value) return [];
-  if (Array.isArray(value))
-    return value.map((v) => String(v).trim()).filter(Boolean);
-  const str = String(value).trim();
-  const jsonLike = str
-    .replace(/^\s*\[\s*/, "[")
-    .replace(/\s*\]\s*$/, "]")
-    .replace(/'\s*,\s*'/g, '","')
-    .replace(/^\['/, '["')
-    .replace(/'\]$/, '"]')
-    .replace(/'/g, '"');
-  try {
-    const parsed = JSON.parse(jsonLike);
-    if (Array.isArray(parsed)) {
-      return parsed.map((v) => String(v).trim()).filter(Boolean);
-    }
-  } catch (_) { }
-  return str
-    .replace(/^\[|\]$/g, "")
-    .split(",")
-    .map((s) => s.replace(/^[\s'\"]+|[\s'\"]+$/g, "").trim())
-    .filter(Boolean);
-}
-
-const COLOR_PALETTE = [
-  "#2e7d32", // green 700
-  "#1b5e20", // green 900
-  "#43a047", // green 600
-  "#66bb6a", // green 400
-  "#81c784", // green 300
-  "#26a69a", // teal 600
-  "#00796b", // teal 800
-  "#558b2f", // light green 800
-  "#689f38", // light green 700
-  "#8bc34a", // light green 500
-  "#33691e", // light green 900
-  "#00acc1", // cyan 600
-  "#26c6da", // cyan 400
-  "#9ccc65", // light green 400
-  "#4db6ac", // teal 300
-  "#a5d6a7", // green 200
+// Legacy reason series (non-schema mode) keep the original green-ish palette
+const LEGACY_COLOR_PALETTE = [
+  "#2e7d32", "#1b5e20", "#43a047", "#66bb6a", "#81c784",
+  "#26a69a", "#00796b", "#558b2f", "#689f38", "#8bc34a",
+  "#33691e", "#00acc1", "#26c6da", "#9ccc65", "#4db6ac", "#a5d6a7",
 ];
 
 const SPECIAL_SERIES = {
   PNC_SITES: "Potentially Non-Compliant Sites",
   NULL_SITES: "Null Sites",
+};
+
+const SPECIAL_SERIES_DESCRIPTIONS = {
+  [SPECIAL_SERIES.PNC_SITES]:
+    "Counts rows in the PotentiallyNonCompliantSites dataset for each month.",
+  [SPECIAL_SERIES.NULL_SITES]:
+    "Counts rows in the NullSites dataset for each month.",
 };
 
 const PNC_REASON_LIST = [
@@ -98,11 +123,75 @@ const PNC_REASON_LIST = [
 
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
 
-export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
-  const [selectedReasons, setSelectedReasons] = useState([]);
+function parseReasons(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  const str = String(value).trim();
+  const jsonLike = str
+    .replace(/^\s*\[\s*/, "[")
+    .replace(/\s*\]\s*$/, "]")
+    .replace(/'\s*,\s*'/g, '","')
+    .replace(/^\['/, '["')
+    .replace(/'\]$/, '"]')
+    .replace(/'/g, '"');
+  try {
+    const parsed = JSON.parse(jsonLike);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean);
+    }
+  } catch {
+    // Fall back to the simple split below.
+  }
+  return str
+    .replace(/^\[|\]$/g, "")
+    .split(",")
+    .map((item) => item.replace(/^[\s'"]+|[\s'"]+$/g, "").trim())
+    .filter(Boolean);
+}
+
+function normalizeRow(row) {
+  const normalized = {};
+  Object.keys(row || {}).forEach((key) => {
+    normalized[String(key).trim()] = row[key];
+  });
+  return normalized;
+}
+
+function parseCsv(publicCsvPath) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(publicCsvPath, {
+      download: true,
+      header: true,
+      dynamicTyping: false,
+      skipEmptyLines: true,
+      complete: (parsed) => {
+        resolve({
+          headers: (parsed.meta?.fields || []).map((field) => String(field).trim()),
+          rows: (parsed.data || []).map(normalizeRow),
+        });
+      },
+      error: (err) => {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    });
+  });
+}
+
+export default function ReasonTrendsChart({
+  analysisMode,
+  timePeriods,
+  stateMonths,
+}) {
+  const [selectedSeries, setSelectedSeries] = useState([]);
   const [chartType, setChartType] = useState("line");
-  const [stateMonthToRows, setStateMonthToRows] = useState({});
+  const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
+  const [stateMonthToPncRows, setStateMonthToPncRows] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
+  const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] =
+    useState({});
+  const [schemaParseErrorCount, setSchemaParseErrorCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedStates, setSelectedStates] = useState(["CA"]);
@@ -110,13 +199,14 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
 
   useEffect(() => {
     let cancelled = false;
+
     fetch("/classifications_of_compliance.json")
       .then((res) =>
         res.ok
           ? res.json()
           : Promise.reject(
-            new Error("Failed to load classifications_of_compliance.json")
-          )
+              new Error("Failed to load classifications_of_compliance.json")
+            )
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -126,46 +216,31 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
       .catch((err) => {
         console.warn("Failed to load reason descriptions:", err);
       });
+
     return () => {
       cancelled = true;
     };
   }, []);
 
   useEffect(() => {
+    setSelectedSeries([]);
+  }, [analysisMode]);
+
+  useEffect(() => {
     let cancelled = false;
+
     async function loadSelectedStates() {
       setLoading(true);
       setError("");
-      try {
-        function parseCsv(publicCsvPath) {
-          return new Promise((resolve, reject) => {
-            Papa.parse(publicCsvPath, {
-              download: true,
-              header: true,
-              dynamicTyping: false,
-              skipEmptyLines: true,
-              complete: (parsed) => {
-                const normalizedRows = (parsed.data || []).map((row) => {
-                  const normalized = {};
-                  Object.keys(row).forEach((key) => {
-                    const trimmedKey = String(key).trim();
-                    normalized[trimmedKey] = row[key];
-                  });
-                  return normalized;
-                });
-                resolve(normalizedRows);
-              },
-              error: (err) => {
-                reject(err instanceof Error ? err : new Error(String(err)));
-              },
-            });
-          });
-        }
 
+      try {
         const states = Array.isArray(selectedStates) ? selectedStates : [];
         if (states.length === 0) {
-          setStateMonthToRows({});
+          setStateMonthToAllRecords({});
+          setStateMonthToPncRows({});
           setStateMonthToNullRows({});
+          setStateMonthToSchemaAvailability({});
+          setSchemaParseErrorCount(0);
           setLoading(false);
           return;
         }
@@ -173,101 +248,280 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         const perStateResults = await Promise.all(
           states.map(async (stateCode) => {
             const monthKeys = (stateMonths && stateMonths[stateCode]) || [];
-            const results = await Promise.all(
+            const monthResults = await Promise.all(
               monthKeys.map(async (monthKey) => {
+                const allPath = `/${stateCode}/Crawl_Data_${stateCode} - ${monthKey}.csv`;
                 const pncPath = `/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`;
                 const nullPath = `/${stateCode}/Crawl_Data_${stateCode} - NullSites${monthKey}.csv`;
-                const [pncRows, nullRows] = await Promise.all([
+
+                const [allData, pncData, nullData] = await Promise.all([
+                  parseCsv(allPath),
                   parseCsv(pncPath),
                   parseCsv(nullPath),
                 ]);
-                return { key: monthKey, pncRows, nullRows };
+
+                const hasSchemaColumn = allData.headers.includes(
+                  SCHEMA_CLASSIFICATION_COLUMN
+                );
+                const allRecords = allData.rows.map((row) => ({
+                  row,
+                  schema: getSchemaClassificationForRow(row),
+                }));
+                const parseErrors = hasSchemaColumn
+                  ? allRecords.reduce(
+                      (count, record) =>
+                        count + (record.schema.parseError ? 1 : 0),
+                      0
+                    )
+                  : 0;
+
+                return {
+                  key: monthKey,
+                  allRecords,
+                  pncRows: pncData.rows,
+                  nullRows: nullData.rows,
+                  hasSchemaColumn,
+                  parseErrors,
+                };
               })
             );
-            const pncMap = {};
-            const nullMap = {};
-            results.forEach(({ key, pncRows, nullRows }) => {
-              pncMap[key] = pncRows;
-              nullMap[key] = nullRows;
-            });
-            return { state: stateCode, pncMap, nullMap };
+
+            return { stateCode, monthResults };
           })
         );
+
         if (cancelled) return;
-        const nextStateMonthToRows = {};
-        const nextStateMonthToNullRows = {};
-        perStateResults.forEach(({ state, pncMap, nullMap }) => {
-          nextStateMonthToRows[state] = pncMap;
-          nextStateMonthToNullRows[state] = nullMap;
+
+        const nextAllRecords = {};
+        const nextPncRows = {};
+        const nextNullRows = {};
+        const nextSchemaAvailability = {};
+        let nextParseErrorCount = 0;
+
+        perStateResults.forEach(({ stateCode, monthResults }) => {
+          nextAllRecords[stateCode] = {};
+          nextPncRows[stateCode] = {};
+          nextNullRows[stateCode] = {};
+          nextSchemaAvailability[stateCode] = {};
+
+          monthResults.forEach(
+            ({
+              key,
+              allRecords,
+              pncRows,
+              nullRows,
+              hasSchemaColumn,
+              parseErrors,
+            }) => {
+              nextAllRecords[stateCode][key] = allRecords;
+              nextPncRows[stateCode][key] = pncRows;
+              nextNullRows[stateCode][key] = nullRows;
+              nextSchemaAvailability[stateCode][key] = hasSchemaColumn;
+              nextParseErrorCount += parseErrors;
+            }
+          );
         });
-        setStateMonthToRows(nextStateMonthToRows);
-        setStateMonthToNullRows(nextStateMonthToNullRows);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+
+        setStateMonthToAllRecords(nextAllRecords);
+        setStateMonthToPncRows(nextPncRows);
+        setStateMonthToNullRows(nextNullRows);
+        setStateMonthToSchemaAvailability(nextSchemaAvailability);
+        setSchemaParseErrorCount(nextParseErrorCount);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
+
     loadSelectedStates();
+
     return () => {
       cancelled = true;
     };
-  }, [selectedStates]);
+  }, [selectedStates, stateMonths]);
 
   const unifiedMonthKeys = useMemo(() => {
     const states = Array.isArray(selectedStates) ? selectedStates : [];
     if (!Array.isArray(timePeriods) || timePeriods.length === 0) return [];
-    if (states.length === 0) return timePeriods.map((p) => p.key);
+    if (states.length === 0) return timePeriods.map((period) => period.key);
+
     const keySet = new Set();
-    states.forEach((s) => {
-      const keys = (stateMonths && stateMonths[s]) || [];
-      keys.forEach((k) => keySet.add(k));
+    states.forEach((stateCode) => {
+      const keys = (stateMonths && stateMonths[stateCode]) || [];
+      keys.forEach((key) => keySet.add(key));
     });
-    // Preserve chronological order from timePeriods
-    return timePeriods.filter((p) => keySet.has(p.key)).map((p) => p.key);
-  }, [selectedStates, timePeriods, stateMonths]);
+
+    return timePeriods
+      .filter((period) => keySet.has(period.key))
+      .map((period) => period.key);
+  }, [selectedStates, stateMonths, timePeriods]);
 
   const labels = useMemo(() => {
     const keyToLabel = new Map(
-      (timePeriods || []).map((p) => [p.key, p.label])
+      (timePeriods || []).map((period) => [period.key, period.label])
     );
-    return unifiedMonthKeys.map((k) => keyToLabel.get(k));
+    return unifiedMonthKeys.map((key) => keyToLabel.get(key) || key);
   }, [timePeriods, unifiedMonthKeys]);
 
+  const schemaSeriesMeta = useMemo(() => {
+    const labelsByToken = {};
+    const descriptionsByToken = {};
+    const tokenSet = new Set();
+
+    selectedStates.forEach((stateCode) => {
+      unifiedMonthKeys.forEach((monthKey) => {
+        const records = stateMonthToAllRecords[stateCode]?.[monthKey] || [];
+        records.forEach(({ schema }) => {
+          schema.tokens.forEach((token) => {
+            tokenSet.add(token);
+            labelsByToken[token] = schema.labels[token] || token;
+            descriptionsByToken[token] = schema.descriptions[token] || "";
+          });
+        });
+      });
+    });
+
+    const tokens = sortSchemaTokens(tokenSet);
+    return { tokens, labelsByToken, descriptionsByToken };
+  }, [selectedStates, stateMonthToAllRecords, unifiedMonthKeys]);
+
+  const schemaModeAvailable = useMemo(() => {
+    return selectedStates.some((stateCode) =>
+      unifiedMonthKeys.some(
+        (monthKey) => stateMonthToSchemaAvailability[stateCode]?.[monthKey]
+      )
+    );
+  }, [selectedStates, stateMonthToSchemaAvailability, unifiedMonthKeys]);
+
+  const seriesOptions = useMemo(() => {
+    const base = [
+      {
+        key: SPECIAL_SERIES.PNC_SITES,
+        label: SPECIAL_SERIES.PNC_SITES,
+        description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.PNC_SITES],
+      },
+      {
+        key: SPECIAL_SERIES.NULL_SITES,
+        label: SPECIAL_SERIES.NULL_SITES,
+        description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES],
+      },
+    ];
+
+    if (analysisMode === ANALYSIS_MODES.SCHEMA) {
+      return [
+        ...base,
+        ...schemaSeriesMeta.tokens.map((token) => ({
+          key: token,
+          label: schemaSeriesMeta.labelsByToken[token] || token,
+          description: schemaSeriesMeta.descriptionsByToken[token] || "",
+        })),
+      ];
+    }
+
+    return [
+      ...base,
+      ...PNC_REASON_LIST.map((reason) => ({
+        key: reason,
+        label: reason,
+        description: reasonDescriptions[reason] || "",
+      })),
+    ];
+  }, [analysisMode, reasonDescriptions, schemaSeriesMeta]);
+
+  useEffect(() => {
+    const optionKeys = new Set(seriesOptions.map((option) => option.key));
+    setSelectedSeries((previous) =>
+      previous.filter((value) => optionKeys.has(value))
+    );
+  }, [seriesOptions]);
+
   const datasets = useMemo(() => {
-    if (!selectedReasons || selectedReasons.length === 0) return [];
+    if (selectedSeries.length === 0) return [];
+
     const allDatasets = [];
-    const states =
+    const activeStates =
       selectedStates && selectedStates.length > 0 ? selectedStates : [];
-    states.forEach((stateCode, stateIdx) => {
-      selectedReasons.forEach((reason, reasonIdx) => {
-        const color =
-          COLOR_PALETTE[(reasonIdx * 3 + stateIdx) % COLOR_PALETTE.length];
+
+    // Track how many times each status group has been used so successive
+    // same-status series cycle through different shades within their palette.
+    const statusVarCounters = {};
+
+    activeStates.forEach((stateCode) => {
+      selectedSeries.forEach((seriesKey) => {
+        // ── Semantic color assignment ──────────────────────────────────────
+        let color;
+        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
+          // Always a punchy warning red — distinct from the did_not_opt_out palette
+          color = "#c2410c";
+        } else if (seriesKey === SPECIAL_SERIES.NULL_SITES) {
+          color = "#94a3b8"; // light slate grey
+        } else {
+          const parsed = parseSchemaToken(seriesKey);
+          const statusKey = parsed?.status ?? "__legacy";
+          const palette =
+            STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
+          const idx = statusVarCounters[statusKey] ?? 0;
+          statusVarCounters[statusKey] = idx + 1;
+          color = palette[idx % palette.length];
+        }
+        // ──────────────────────────────────────────────────────────────────
+
         let data;
-        if (reason === SPECIAL_SERIES.PNC_SITES) {
+
+        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
           data = unifiedMonthKeys.map((monthKey) => {
-            const rows = stateMonthToRows[stateCode]?.[monthKey];
+            const rows = stateMonthToPncRows[stateCode]?.[monthKey];
             return Array.isArray(rows) ? rows.length : null;
           });
-        } else if (reason === SPECIAL_SERIES.NULL_SITES) {
+        } else if (seriesKey === SPECIAL_SERIES.NULL_SITES) {
           data = unifiedMonthKeys.map((monthKey) => {
             const rows = stateMonthToNullRows[stateCode]?.[monthKey];
             return Array.isArray(rows) ? rows.length : null;
           });
+        } else if (analysisMode === ANALYSIS_MODES.SCHEMA) {
+          data = unifiedMonthKeys.map((monthKey) => {
+            const hasSchemaColumn =
+              stateMonthToSchemaAvailability[stateCode]?.[monthKey];
+            if (!hasSchemaColumn) return null;
+
+            const records = stateMonthToAllRecords[stateCode]?.[monthKey];
+            if (!Array.isArray(records)) return null;
+
+            let count = 0;
+            records.forEach(({ schema }) => {
+              if (schema.tokens.includes(seriesKey)) {
+                count += 1;
+              }
+            });
+            return count;
+          });
         } else {
           data = unifiedMonthKeys.map((monthKey) => {
-            const rows = stateMonthToRows[stateCode]?.[monthKey];
+            const rows = stateMonthToPncRows[stateCode]?.[monthKey];
             if (!Array.isArray(rows)) return null;
+
             let count = 0;
-            for (const row of rows) {
+            rows.forEach((row) => {
               const reasons = parseReasons(row?.Reasons_Non_Compliant);
-              if (reasons.includes(reason)) count += 1;
-            }
+              if (reasons.includes(seriesKey)) {
+                count += 1;
+              }
+            });
             return count;
           });
         }
+
+        const seriesOption = seriesOptions.find(
+          (option) => option.key === seriesKey
+        );
+
         allDatasets.push({
-          label: `${stateCode} - ${reason}`,
+          label: `${stateCode} - ${seriesOption?.label || seriesKey}`,
           data,
           borderColor: color,
           backgroundColor: chartType === "line" ? color : `${color}80`,
@@ -275,13 +529,19 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         });
       });
     });
+
     return allDatasets;
   }, [
-    selectedReasons,
-    selectedStates,
-    stateMonthToRows,
-    stateMonthToNullRows,
+    analysisMode,
     chartType,
+    selectedSeries,
+    selectedStates,
+    seriesOptions,
+    stateMonthToAllRecords,
+    stateMonthToNullRows,
+    stateMonthToPncRows,
+    stateMonthToSchemaAvailability,
+    unifiedMonthKeys,
   ]);
 
   const data = useMemo(
@@ -289,7 +549,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
       labels,
       datasets,
     }),
-    [labels, datasets]
+    [datasets, labels]
   );
 
   const options = useMemo(
@@ -298,9 +558,16 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
       maintainAspectRatio: false,
       plugins: {
         legend: { position: "bottom" },
+        tooltip: {
+          mode: "nearest",
+          intersect: true,
+        },
         title: {
           display: true,
-          text: "Reason trends over months",
+          text:
+            analysisMode === ANALYSIS_MODES.SCHEMA
+              ? "Schema classification trends over months"
+              : "Reason trends over months",
         },
       },
       scales: {
@@ -313,7 +580,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         },
       },
     }),
-    []
+    [analysisMode]
   );
 
   return (
@@ -341,7 +608,7 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
               onClick={() =>
                 setSelectedStates((prev) =>
                   prev.includes(stateCode)
-                    ? prev.filter((s) => s !== stateCode)
+                    ? prev.filter((value) => value !== stateCode)
                     : [...prev, stateCode]
                 )
               }
@@ -352,78 +619,75 @@ export default function ReasonTrendsChart({ timePeriods, stateMonths }) {
         })}
       </div>
 
-      <div className="section">
-        <div className="toolbar" style={{ justifyContent: "space-between" }}>
-          <strong>Chart Reason Filters</strong>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={() => setSelectedReasons(PNC_REASON_LIST)}
-              disabled={PNC_REASON_LIST.length === 0}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setSelectedReasons([])}
-              disabled={!selectedReasons || selectedReasons.length === 0}
-            >
-              Clear
-            </button>
-          </div>
+      {analysisMode === ANALYSIS_MODES.SCHEMA && schemaParseErrorCount > 0 && (
+        <div className="notice-card notice-card--warning" role="status">
+          Ignored invalid schema classifications in {schemaParseErrorCount} row
+          {schemaParseErrorCount === 1 ? "" : "s"} while building chart
+          datasets.
         </div>
-        <div className="chip-group">
-          {[
-            SPECIAL_SERIES.PNC_SITES,
-            SPECIAL_SERIES.NULL_SITES,
-            ...PNC_REASON_LIST,
-          ].map((reason) => {
-            const active = selectedReasons?.includes(reason);
-            return (
-              <Tooltip
-                key={reason}
-                content={reasonDescriptions[reason]}
-                position="top"
-              >
-                <div className="chart-reason-tooltip-wrapper">
-                  <button
-                    className={`chip${active ? " chip--active" : ""}`}
-                    onClick={() => {
-                      setSelectedReasons((prev) =>
-                        prev.includes(reason)
-                          ? prev.filter((r) => r !== reason)
-                          : [...prev, reason]
-                      );
-                    }}
-                  >
-                    {reason}
-                  </button>
-                </div>
-              </Tooltip>
-            );
-          })}
-        </div>
-      </div>
-      {loading && <div style={{ padding: 8 }}>Loading chart data…</div>}
+      )}
+
+      {/* Chart Schema/Reason Filters (hierarchical panel) */}
+      <ChartSchemaFilterPanel
+        seriesOptions={seriesOptions}
+        selectedSeries={selectedSeries}
+        selectedStates={selectedStates}
+        onToggle={(key) =>
+          setSelectedSeries((prev) =>
+            prev.includes(key)
+              ? prev.filter((k) => k !== key)
+              : [...prev, key]
+          )
+        }
+        isSchemaMode={analysisMode === ANALYSIS_MODES.SCHEMA}
+      />
+
+      {loading && <div style={{ padding: 8 }}>Loading chart data...</div>}
       {error && (
         <div style={{ padding: 8, color: "#b00020" }}>
           Error loading chart data: {error}
         </div>
       )}
+      {!loading && !error && selectedStates.length === 0 && (
+        <div style={{ padding: 8 }}>Select one or more states to view the chart.</div>
+      )}
       {!loading &&
         !error &&
-        (!selectedReasons || selectedReasons.length === 0) && (
-          <div style={{ padding: 8 }}>
-            Select one or more reasons to view the chart.
+        selectedStates.length > 0 &&
+        analysisMode === ANALYSIS_MODES.SCHEMA &&
+        !schemaModeAvailable && (
+          <div className="empty-state">
+            <h3>Schema mode unavailable</h3>
+            <p>
+              The selected monthly CSVs do not yet include the future{" "}
+              <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column.
+            </p>
           </div>
         )}
-      {!loading && !error && selectedReasons && selectedReasons.length > 0 && (
-        <div className="chart-area">
-          {chartType === "line" ? (
-            <Line data={data} options={options} />
-          ) : (
-            <Bar data={data} options={options} />
-          )}
-        </div>
-      )}
+      {!loading &&
+        !error &&
+        selectedStates.length > 0 &&
+        (analysisMode !== ANALYSIS_MODES.SCHEMA || schemaModeAvailable) &&
+        selectedSeries.length === 0 && (
+          <div style={{ padding: 8 }}>
+            {analysisMode === ANALYSIS_MODES.SCHEMA
+              ? "Select one or more schema classifications to view the chart."
+              : "Select one or more reasons to view the chart."}
+          </div>
+        )}
+      {!loading &&
+        !error &&
+        selectedSeries.length > 0 &&
+        selectedStates.length > 0 &&
+        (analysisMode !== ANALYSIS_MODES.SCHEMA || schemaModeAvailable) && (
+          <div className="chart-area">
+            {chartType === "line" ? (
+              <Line data={data} options={options} />
+            ) : (
+              <Bar data={data} options={options} />
+            )}
+          </div>
+        )}
     </div>
   );
 }

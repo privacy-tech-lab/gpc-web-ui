@@ -1,0 +1,7 @@
+Well-known,Compliance Classification
+"""'gpc': true"" and a lastUpdate",Well-known: Opted Out
+"""'gpc': true"" and no lastUpdate",Well-known: Opted Out
+"""'gpc': false"" and a lastUpdate",Well-known: Did Not Opt Out
+"""'gpc': false"" and no lastUpdate",Well-known: Did Not Opt Out
+Invalid,Well-known: Invalid Well-known
+"""Invalid"" means a Well-known string that neither includes ""'gpc': true"" nor ""'gpc': false"".",

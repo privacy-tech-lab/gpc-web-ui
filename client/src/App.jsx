@@ -1,52 +1,261 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 import Tooltip from "./components/Tooltip";
+import SchemaFilterPanel from "./components/SchemaFilterPanel.jsx";
 import { renderJSONCell } from "./utils/renderJSONCell";
+import {
+  ANALYSIS_MODES,
+  SCHEMA_CLASSIFICATION_COLUMN,
+  getSchemaClassificationForRow,
+  isSchemaRowNonCompliant,
+  sortSchemaTokens,
+} from "./utils/schemaClassification.js";
+
+const PAGE_SIZE = 10;
+
+const TIME_PERIODS = [
+  { key: "Dec2023", label: "December 2023" },
+  { key: "Feb2024", label: "February 2024" },
+  { key: "Apr2024", label: "April 2024" },
+  { key: "Jun2024", label: "June 2024" },
+  { key: "FebMar2025", label: "Feb-Mar 2025" },
+  { key: "May2025", label: "May 2025" },
+  { key: "August2025", label: "August 2025" },
+  { key: "Jan2026", label: "January 2026" },
+];
+
+const STATE_MONTHS = {
+  CA: [
+    "Dec2023",
+    "Feb2024",
+    "Apr2024",
+    "Jun2024",
+    "FebMar2025",
+    "May2025",
+    "August2025",
+    "Jan2026",
+  ],
+  CT: ["FebMar2025", "May2025", "August2025"],
+  CO: ["FebMar2025", "May2025"],
+  NJ: ["August2025"],
+};
+
+const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
+
+const DATA_TYPES = [
+  { key: "all", label: "All data" },
+  { key: "null", label: "Null sites" },
+  { key: "pnc", label: "Potentially non-compliant" },
+  { key: "schema-noncompliant", label: "Non-compliant (schema)", schemaOnly: true },
+];
+
+const PNC_REASON_LIST = [
+  "Invalid_uspapi",
+  "Invalid_usp_cookies",
+  "uspapi",
+  "usp_cookies",
+  "MissingAfter_uspapi",
+  "MissingAfter_usp_cookies",
+  "Invalid_GPPString",
+  "SaleOptOut_USNAT",
+  "SharingOptOut_USNAT",
+  "TargetedAdvertisingOptOut_USNAT",
+  "SaleOptOut_State",
+  "SharingOptOut_State",
+  "TargetedAdvertisingOptOut_State",
+  "MissingAfterGPPString",
+  "Invalid_OptanonConsent",
+  "OptanonConsent",
+  "MissingAfterOptanonConsent",
+  "Well-Known",
+  "Invalid_Well-Known",
+  "SegmentSwitchGPP",
+];
+
+const STRUCTURED_COLUMNS = new Set([
+  "urlclassification",
+  "third_party_urls",
+  "unique_ad_networks",
+  "decoded_gpp_before_gpc",
+  "decoded_gpp_after_gpc",
+  SCHEMA_CLASSIFICATION_COLUMN.toLowerCase(),
+]);
+
+function buildPath(period, type, state) {
+  if (type === "all" || type === "schema-noncompliant") {
+    return `/${state}/Crawl_Data_${state} - ${period}.csv`;
+  }
+  if (type === "null") {
+    return `/${state}/Crawl_Data_${state} - NullSites${period}.csv`;
+  }
+  if (type === "pnc") {
+    return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${period}.csv`;
+  }
+  return `/${state}/Crawl_Data_${state} - ${period}.csv`;
+}
+
+function normalizeRow(row) {
+  const normalized = {};
+  Object.keys(row || {}).forEach((key) => {
+    normalized[String(key).trim()] = row[key];
+  });
+  return normalized;
+}
+
+function parseReasons(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  const str = String(value).trim();
+  const jsonLike = str
+    .replace(/^\s*\[\s*/, "[")
+    .replace(/\s*\]\s*$/, "]")
+    .replace(/'\s*,\s*'/g, '","')
+    .replace(/^\['/, '["')
+    .replace(/'\]$/, '"]')
+    .replace(/'/g, '"');
+  try {
+    const parsed = JSON.parse(jsonLike);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean);
+    }
+  } catch {
+    // Fall through to the simple parser below.
+  }
+  return str
+    .replace(/^\[|\]$/g, "")
+    .split(",")
+    .map((item) => item.replace(/^[\s'"]+|[\s'"]+$/g, "").trim())
+    .filter(Boolean);
+}
+
+function getRowSearchValue(row) {
+  return String(row?.["Site URL"] ?? row?.domain ?? row?.site ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+const getParam = (keys, fallback) => {
+  if (typeof window === "undefined") return fallback;
+  const params = new URLSearchParams(window.location.search);
+  for (const k of keys) {
+    if (params.has(k)) return params.get(k);
+  }
+  return fallback;
+};
+
+const getArrayParam = (keys, fallback) => {
+  if (typeof window === "undefined") return fallback;
+  const params = new URLSearchParams(window.location.search);
+  for (const k of keys) {
+    const val = params.get(k);
+    if (val) return val.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return fallback;
+};
 
 function App() {
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
-  const timePeriods = useMemo(
-    () => [
-      { key: "Dec2023", label: "December 2023" },
-      { key: "Feb2024", label: "February 2024" },
-      { key: "Apr2024", label: "April 2024" },
-      { key: "Jun2024", label: "June 2024" },
-      { key: "FebMar2025", label: "Feb-Mar 2025" },
-      { key: "May2025", label: "May 2025" },
-      { key: "August2025", label: "August 2025" },
-      { key: "Jan2026", label: "January 2026" },
-    ],
-    []
+  const [currentPage, setCurrentPage] = useState(() => {
+    const p = parseInt(getParam(["page"], "1"), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  });
+  const [selectedTimePeriod, setSelectedTimePeriod] = useState(() =>
+    getParam(["period"], "May2025")
   );
-  const stateMonths = {
-    CA: [
-      "Dec2023",
-      "Feb2024",
-      "Apr2024",
-      "Jun2024",
-      "FebMar2025",
-      "May2025",
-      "August2025",
-      "Jan2026",
-    ],
-    CT: ["FebMar2025", "May2025", "August2025"],
-    CO: ["FebMar2025", "May2025"],
-    NJ: ["August2025"],
-  };
-
-  const availableStates = ["CA", "CT", "CO", "NJ"];
-
+  const [selectedDataType, setSelectedDataType] = useState(() =>
+    getParam(["datatype", "type"], "all")
+  );
+  const [searchQuery, setSearchQuery] = useState(() =>
+    getParam(["search", "url", "domain", "site"], "")
+  );
+  const hasScrolledToSearch = useRef(false);
+  const [selectedState, setSelectedState] = useState(() =>
+    getParam(["state"], "CA")
+  );
+  const [analysisMode, setAnalysisMode] = useState(() =>
+    getParam(["mode"], ANALYSIS_MODES.SCHEMA)
+  );
+  const [selectedReasons, setSelectedReasons] = useState(() =>
+    getArrayParam(["reasons"], [])
+  );
+  const [selectedSchemaTokens, setSelectedSchemaTokens] = useState(() =>
+    getArrayParam(["tokens", "schema"], [])
+  );
+  const [showFilters, setShowFilters] = useState(true);
   const [descriptionsOfColumns, setDescriptionsOfColumns] = useState({});
   const [headerFriendlyNames, setHeaderFriendlyNames] = useState({});
+  const [visibleColumns, setVisibleColumns] = useState([]);
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+
+    if (currentPage !== 1) params.set("page", currentPage);
+    else params.delete("page");
+
+    if (selectedState !== "CA") params.set("state", selectedState);
+    else params.delete("state");
+
+    params.set("period", selectedTimePeriod);
+
+    if (selectedDataType !== "all") params.set("datatype", selectedDataType);
+    else params.delete("datatype");
+
+    if (searchQuery) params.set("search", searchQuery);
+    else {
+      params.delete("search");
+      params.delete("url");
+      params.delete("domain");
+      params.delete("site");
+    }
+
+    if (analysisMode !== ANALYSIS_MODES.SCHEMA) params.set("mode", analysisMode);
+    else params.delete("mode");
+
+    if (selectedReasons.length > 0) params.set("reasons", selectedReasons.join(","));
+    else params.delete("reasons");
+
+    if (selectedSchemaTokens.length > 0) params.set("tokens", selectedSchemaTokens.join(","));
+    else params.delete("tokens");
+
+    const newRelativePathQuery = window.location.pathname + "?" + params.toString();
+    const finalUrl = params.toString() ? newRelativePathQuery : window.location.pathname;
+
+    if (finalUrl !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, "", finalUrl);
+    }
+  }, [
+    currentPage,
+    selectedState,
+    selectedTimePeriod,
+    selectedDataType,
+    searchQuery,
+    analysisMode,
+    selectedReasons,
+    selectedSchemaTokens,
+  ]);
+
+  const filePath = useMemo(
+    () => buildPath(selectedTimePeriod, selectedDataType, selectedState),
+    [selectedTimePeriod, selectedDataType, selectedState]
+  );
+
+  const allowedTimePeriods = useMemo(() => {
+    const keys = STATE_MONTHS[selectedState] || [];
+    return TIME_PERIODS.filter((period) => keys.includes(period.key));
+  }, [selectedState]);
+
   useEffect(() => {
     let cancelled = false;
+
     fetch("/descriptions_of_columns.json")
       .then((res) =>
         res.ok
@@ -61,8 +270,9 @@ function App() {
         }
       })
       .catch((err) => {
-        console.warn("Failed to load reason descriptions:", err);
+        console.warn("Failed to load column descriptions:", err);
       });
+
     return () => {
       cancelled = true;
     };
@@ -70,6 +280,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+
     fetch("/header_friendly_names.json")
       .then((res) =>
         res.ok
@@ -86,51 +297,15 @@ function App() {
       .catch((err) => {
         console.warn("Failed to load header friendly names:", err);
       });
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const dataTypes = useMemo(
-    () => [
-      { key: "all", label: "All data" },
-      { key: "null", label: "Null sites" },
-      { key: "pnc", label: "Potentially non-compliant" },
-    ],
-    []
-  );
-
-  const [selectedTimePeriod, setSelectedTimePeriod] = useState("May2025");
-  const [selectedDataType, setSelectedDataType] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedState, setSelectedState] = useState("CA");
-
-  const getFilePath = useMemo(() => {
-    const buildPath = (period, type, state) => {
-      if (type === "all") {
-        return `/${state}/Crawl_Data_${state} - ${period}.csv`;
-      } else if (type === "null") {
-        return `/${state}/Crawl_Data_${state} - NullSites${period}.csv`;
-      } else if (type === "pnc") {
-        return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${period}.csv`;
-      }
-      return `/${state}/Crawl_Data_${state} - ${period}.csv`;
-    };
-    return buildPath(selectedTimePeriod, selectedDataType, selectedState);
-  }, [selectedTimePeriod, selectedDataType, selectedState]);
-
-  // Periods allowed for the currently selected state
-  const allowedTimePeriods = useMemo(() => {
-    const keys = stateMonths[selectedState] || [];
-    const allowed = timePeriods.filter((p) => keys.includes(p.key));
-    return allowed;
-  }, [selectedState, stateMonths, timePeriods]);
-
-  // Ensure selected time period is valid when state changes
   useEffect(() => {
-    const allowedKeys = stateMonths[selectedState] || [];
+    const allowedKeys = STATE_MONTHS[selectedState] || [];
     if (!allowedKeys.includes(selectedTimePeriod)) {
-      // Default to the last available (usually most recent) for that state
       const next =
         allowedKeys.length > 0
           ? allowedKeys[allowedKeys.length - 1]
@@ -138,84 +313,66 @@ function App() {
       setSelectedTimePeriod(next);
       setCurrentPage(1);
     }
-  }, [selectedState]);
-  const [selectedReasons, setSelectedReasons] = useState([]);
-  const [showFilters, setShowFilters] = useState(true);
-
-  function parseReasons(value) {
-    if (!value) return [];
-    if (Array.isArray(value))
-      return value.map((v) => String(v).trim()).filter(Boolean);
-    const str = String(value).trim();
-    // Normalize single-quoted list to JSON and parse
-    const jsonLike = str
-      .replace(/^\s*\[\s*/, "[")
-      .replace(/\s*\]\s*$/, "]")
-      .replace(/'\s*,\s*'/g, '","')
-      .replace(/^\['/, '["')
-      .replace(/'\]$/, '"]')
-      .replace(/'/g, '"');
-    try {
-      const parsed = JSON.parse(jsonLike);
-      if (Array.isArray(parsed)) {
-        return parsed.map((v) => String(v).trim()).filter(Boolean);
-      }
-    } catch (_) {
-      // Fallback: comma-split
-    }
-    return str
-      .replace(/^\[|\]$/g, "")
-      .split(",")
-      .map((s) => s.replace(/^[\s'\"]+|[\s'\"]+$/g, "").trim())
-      .filter(Boolean);
-  }
+  }, [selectedState, selectedTimePeriod]);
 
   useEffect(() => {
-    function loadData() {
-      // Load CSV from the public folder using Papa directly (no manual fetch)
-      const publicCsvPath = getFilePath;
-      setLoading(true);
-      setError("");
-      setHeaders([]);
-      setRows([]);
-      setSelectedReasons([]);
+    setSelectedReasons([]);
+    setSelectedSchemaTokens([]);
+    setCurrentPage(1);
+  }, [analysisMode]);
 
-      Papa.parse(publicCsvPath, {
-        download: true,
-        header: true,
-        dynamicTyping: false,
-        skipEmptyLines: true,
-        complete: (parsed) => {
-          if (parsed.errors && parsed.errors.length) {
-            console.warn("CSV parse errors:", parsed.errors);
-          }
+  useEffect(() => {
+    let cancelled = false;
 
-          // Set headers from CSV if available
-          if (parsed.meta && parsed.meta.fields) {
-            setHeaders(parsed.meta.fields.map((h) => String(h).trim()));
-          }
+    setLoading(true);
+    setError("");
+    setHeaders([]);
+    setRows([]);
+    setSelectedReasons([]);
+    setSelectedSchemaTokens([]);
 
-          const normalizedRows = (parsed.data || []).map((row) => {
-            const normalized = {};
-            Object.keys(row).forEach((key) => {
-              const trimmedKey = String(key).trim();
-              normalized[trimmedKey] = row[key];
-            });
-            return normalized;
-          });
+    Papa.parse(filePath, {
+      download: true,
+      header: true,
+      dynamicTyping: false,
+      skipEmptyLines: true,
+      complete: (parsed) => {
+        if (cancelled) return;
 
-          setRows(normalizedRows);
-          setLoading(false);
-        },
-        error: (err) => {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
-        },
-      });
+        if (parsed.errors && parsed.errors.length > 0) {
+          console.warn("CSV parse errors:", parsed.errors);
+        }
+
+        if (parsed.meta?.fields) {
+          setHeaders(parsed.meta.fields.map((field) => String(field).trim()));
+        }
+
+        setRows((parsed.data || []).map(normalizeRow));
+        setLoading(false);
+      },
+      error: (err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      },
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filePath]);
+
+  useEffect(() => {
+    if (!loading && searchQuery && !hasScrolledToSearch.current) {
+      const table = document.getElementById("table-wrapper");
+      if (table) {
+        setTimeout(() => {
+          table.scrollIntoView({ behavior: "smooth", block: "start" });
+          hasScrolledToSearch.current = true;
+        }, 100);
+      }
     }
-
-    loadData();
-  }, [selectedTimePeriod, selectedDataType, getFilePath]);
+  }, [loading, searchQuery]);
 
   const displayHeaders = useMemo(() => {
     if (headers.length > 0) return headers;
@@ -223,115 +380,157 @@ function App() {
     return [];
   }, [headers, rows]);
 
-  // Column visibility
-  const [visibleColumns, setVisibleColumns] = useState([]);
-  const [showColumnPicker, setShowColumnPicker] = useState(false);
   useEffect(() => {
     setVisibleColumns(displayHeaders);
   }, [displayHeaders]);
+
+  const hasSchemaColumn = displayHeaders.includes(SCHEMA_CLASSIFICATION_COLUMN);
+  const schemaModeUnavailable =
+    analysisMode === ANALYSIS_MODES.SCHEMA && !hasSchemaColumn;
+
+  useEffect(() => {
+    if (schemaModeUnavailable) {
+      setShowColumnPicker(false);
+    }
+  }, [schemaModeUnavailable]);
+
+  const rowRecords = useMemo(
+    () =>
+      rows.map((row) => ({
+        row,
+        schema: getSchemaClassificationForRow(row),
+      })),
+    [rows]
+  );
+
+  const schemaParseErrorCount = useMemo(
+    () => rowRecords.filter((record) => record.schema.parseError).length,
+    [rowRecords]
+  );
+
+  const schemaFilterMeta = useMemo(() => {
+    const labels = {};
+    const descriptions = {};
+    const tokenSet = new Set();
+
+    rowRecords.forEach(({ schema }) => {
+      schema.tokens.forEach((token) => {
+        tokenSet.add(token);
+        labels[token] = schema.labels[token] || token;
+        descriptions[token] = schema.descriptions[token] || "";
+      });
+    });
+
+    const tokens = sortSchemaTokens(tokenSet);
+    return { tokens, labels, descriptions };
+  }, [rowRecords]);
+
   const firstStickyColumn = useMemo(() => {
-    const cols =
+    const columns =
       Array.isArray(visibleColumns) && visibleColumns.length > 0
         ? visibleColumns
         : displayHeaders;
-    return cols && cols.length > 0 ? cols[0] : undefined;
+    return columns.length > 0 ? columns[0] : undefined;
   }, [visibleColumns, displayHeaders]);
 
-  const structuredColumns = useMemo(
-    () => new Set(["urlclassification", "third_party_urls", "unique_ad_networks", "decoded_gpp_before_gpc", "decoded_gpp_after_gpc"]),
-    []
-  );
-
-  const pncReasonList = useMemo(
-    () => [
-      "Invalid_uspapi",
-      "Invalid_usp_cookies",
-      "uspapi",
-      "usp_cookies",
-      "MissingAfter_uspapi",
-      "MissingAfter_usp_cookies",
-      "Invalid_GPPString",
-      "SaleOptOut_USNAT",
-      "SharingOptOut_USNAT",
-      "TargetedAdvertisingOptOut_USNAT",
-      "SaleOptOut_State",
-      "SharingOptOut_State",
-      "TargetedAdvertisingOptOut_State",
-      "MissingAfterGPPString",
-      "Invalid_OptanonConsent",
-      "OptanonConsent",
-      "MissingAfterOptanonConsent",
-      "Well-Known",
-      "Invalid_Well-Known",
-      "SegmentSwitchGPP",
-    ],
-    []
-  );
-
-  const reasonOptions = useMemo(() => {
+  const legacyReasonOptions = useMemo(() => {
     if (selectedDataType !== "pnc") return [];
-    return pncReasonList;
-  }, [selectedDataType, pncReasonList]);
+    return PNC_REASON_LIST;
+  }, [selectedDataType]);
 
-  const filteredRows = useMemo(() => {
-    let base = rows;
+  const filteredRecords = useMemo(() => {
+    if (schemaModeUnavailable) return [];
+
+    let base = rowRecords;
     if (
+      analysisMode === ANALYSIS_MODES.LEGACY &&
       selectedDataType === "pnc" &&
-      selectedReasons &&
       selectedReasons.length > 0
     ) {
-      base = base.filter((row) => {
+      base = base.filter(({ row }) => {
         const reasons = parseReasons(row?.Reasons_Non_Compliant);
-        return reasons.some((r) => selectedReasons.includes(r));
+        return reasons.some((reason) => selectedReasons.includes(reason));
       });
     }
-    const q = String(searchQuery || "")
-      .trim()
-      .toLowerCase();
-    if (q.length > 0) {
-      base = base.filter((row) =>
-        String(row?.["Site URL"] ?? "")
-          .toLowerCase()
-          .includes(q)
+
+    // Schema-derived non-compliant filter: any did_not_opt_out status.
+    if (
+      analysisMode === ANALYSIS_MODES.SCHEMA &&
+      selectedDataType === "schema-noncompliant"
+    ) {
+      base = base.filter(({ schema }) => isSchemaRowNonCompliant(schema));
+    }
+
+    if (
+      analysisMode === ANALYSIS_MODES.SCHEMA &&
+      selectedSchemaTokens.length > 0
+    ) {
+      base = base.filter(({ schema }) =>
+        schema.tokens.some((token) => selectedSchemaTokens.includes(token))
       );
     }
+
+    const query = String(searchQuery || "").trim().toLowerCase();
+    if (query.length > 0) {
+      base = base.filter(({ row }) => getRowSearchValue(row).includes(query));
+    }
+
     return base;
-  }, [rows, selectedDataType, selectedReasons, searchQuery]);
+  }, [
+    analysisMode,
+    rowRecords,
+    schemaModeUnavailable,
+    searchQuery,
+    selectedDataType,
+    selectedReasons,
+    selectedSchemaTokens,
+  ]);
+
+  const filteredRows = useMemo(
+    () => filteredRecords.map((record) => record.row),
+    [filteredRecords]
+  );
 
   const totalItems = filteredRows.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
-  const startIndex = (safeCurrentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+  const endIndex = Math.min(startIndex + PAGE_SIZE, totalItems);
+
   const pageRows = useMemo(
     () => filteredRows.slice(startIndex, endIndex),
     [filteredRows, startIndex, endIndex]
   );
 
+  const visibleTableColumns =
+    visibleColumns.length > 0 ? visibleColumns : displayHeaders;
+
+  const showLegacyReasonFilters =
+    analysisMode === ANALYSIS_MODES.LEGACY && selectedDataType === "pnc";
+  const showSchemaFilters =
+    analysisMode === ANALYSIS_MODES.SCHEMA && hasSchemaColumn;
+
   const handleExportFiltered = () => {
     try {
-      const cols =
-        Array.isArray(visibleColumns) && visibleColumns.length > 0
-          ? visibleColumns
-          : displayHeaders;
       const data = filteredRows.map((row) =>
-        cols.map((h) => (row && row[h] != null ? String(row[h]) : ""))
+        visibleTableColumns.map((header) =>
+          row && row[header] != null ? String(row[header]) : ""
+        )
       );
-      const csv = Papa.unparse({ fields: cols, data });
+      const csv = Papa.unparse({ fields: visibleTableColumns, data });
       const blob = new Blob(["\ufeff", csv], {
         type: "text/csv;charset=utf-8;",
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      const filename = `GPC_${selectedState}_${selectedTimePeriod}_${selectedDataType}_filtered.csv`;
       link.href = url;
-      link.download = filename;
+      link.download = `GPC_${selectedState}_${selectedTimePeriod}_${selectedDataType}_${analysisMode}_filtered.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("Failed to export CSV:", e);
+    } catch (err) {
+      console.error("Failed to export CSV:", err);
     }
   };
 
@@ -370,7 +569,32 @@ function App() {
           performing regular crawls of a set of 11,708 websites.
         </p>
       </div>
-      <ReasonTrendsChart timePeriods={timePeriods} stateMonths={stateMonths} />
+
+      <div className="card card--padded mode-toolbar">
+        <div className="toolbar mode-toolbar__inner">
+          <label htmlFor="analysis-mode-select">Analysis Mode:</label>
+          <select
+            id="analysis-mode-select"
+            value={analysisMode}
+            onChange={(e) => setAnalysisMode(e.target.value)}
+          >
+            <option value={ANALYSIS_MODES.SCHEMA}>Schema classifications</option>
+            <option value={ANALYSIS_MODES.LEGACY}>Legacy reasons</option>
+          </select>
+          <span className="mode-toolbar__hint">
+            {analysisMode === ANALYSIS_MODES.LEGACY
+              ? "Legacy mode uses the existing Reasons_Non_Compliant CSV columns."
+              : `Schema mode uses the ${SCHEMA_CLASSIFICATION_COLUMN} column. Select "Non-compliant (schema)" to see sites with any Did Not Opt Out classification.`}
+          </span>
+        </div>
+      </div>
+
+      <ReasonTrendsChart
+        analysisMode={analysisMode}
+        timePeriods={TIME_PERIODS}
+        stateMonths={STATE_MONTHS}
+      />
+
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
       <div className="toolbar" role="group" aria-label="Data filters">
         <label htmlFor="state-select">State:</label>
@@ -382,9 +606,9 @@ function App() {
             setCurrentPage(1);
           }}
         >
-          {availableStates.map((s) => (
-            <option key={s} value={s}>
-              {s}
+          {AVAILABLE_STATES.map((stateCode) => (
+            <option key={stateCode} value={stateCode}>
+              {stateCode}
             </option>
           ))}
         </select>
@@ -414,14 +638,19 @@ function App() {
             setCurrentPage(1);
           }}
         >
-          {dataTypes.map((type) => (
-            <option key={type.key} value={type.key}>
-              {type.label}
+          {DATA_TYPES.map((type) => (
+            <option
+              key={type.key}
+              value={type.key}
+              disabled={type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA}
+            >
+              {type.label}{type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA ? " (schema mode only)" : ""}
             </option>
           ))}
         </select>
+
         <div className="toolbar-item-group">
-          <label htmlFor="url-search">Search URL:</label>{" "}
+          <label htmlFor="url-search">Search URL:</label>
           <input
             id="url-search"
             type="text"
@@ -434,21 +663,31 @@ function App() {
             className="input"
           />
         </div>
+
         <button
           type="button"
           aria-expanded={showColumnPicker}
           aria-controls="column-picker"
-          onClick={() => setShowColumnPicker((s) => !s)}
+          onClick={() => setShowColumnPicker((open) => !open)}
+          disabled={schemaModeUnavailable || loading}
         >
           Edit Columns
         </button>
         <button
           onClick={handleExportFiltered}
-          disabled={totalItems === 0 || loading}
+          disabled={totalItems === 0 || loading || schemaModeUnavailable}
         >
           Export filtered data ({totalItems})
         </button>
       </div>
+
+      {analysisMode === ANALYSIS_MODES.SCHEMA && schemaParseErrorCount > 0 && (
+        <div className="notice-card notice-card--warning" role="status">
+          Ignored invalid schema classifications in {schemaParseErrorCount} row
+          {schemaParseErrorCount === 1 ? "" : "s"} for this dataset.
+        </div>
+      )}
+
       {showColumnPicker && (
         <div
           id="column-picker"
@@ -471,9 +710,7 @@ function App() {
                 type="button"
                 className="compact-btn"
                 onClick={() => {
-                  // Keep at least one column selected; if only one, do nothing
                   if (visibleColumns.length <= 1) return;
-                  // Clear down to the first header to keep one visible
                   setVisibleColumns((prev) =>
                     prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1)
                   );
@@ -485,35 +722,35 @@ function App() {
             </div>
           </div>
           <div className="column-grid">
-            {displayHeaders.map((col) => {
-              const checked = visibleColumns.includes(col);
-              const id = `col-${col.replace(/\s+/g, "-")}`;
+            {displayHeaders.map((column) => {
+              const checked = visibleColumns.includes(column);
+              const id = `col-${column.replace(/\s+/g, "-")}`;
               return (
-                <label key={col} htmlFor={id} className="column-item">
+                <label key={column} htmlFor={id} className="column-item">
                   <input
                     id={id}
                     type="checkbox"
                     checked={checked}
                     onChange={() => {
                       setVisibleColumns((prev) => {
-                        const has = prev.includes(col);
-                        if (has) {
-                          // Do not allow removing the last visible column
+                        const hasColumn = prev.includes(column);
+                        if (hasColumn) {
                           if (prev.length === 1) return prev;
-                          return prev.filter((c) => c !== col);
+                          return prev.filter((value) => value !== column);
                         }
-                        return [...prev, col];
+                        return [...prev, column];
                       });
                       setCurrentPage(1);
                     }}
                   />
-                  <span>{col}</span>
+                  <span>{column}</span>
                 </label>
               );
             })}
           </div>
         </div>
       )}
+
       <div className="kpis">
         <div className="kpi">
           <div className="kpi-value">{totalItems.toLocaleString()}</div>
@@ -527,7 +764,7 @@ function App() {
         </div>
       </div>
 
-      {selectedDataType === "pnc" && (
+      {showLegacyReasonFilters && (
         <div id="reason-filters" className="compact-filters">
           <div className="filter-header">
             <h3>
@@ -537,7 +774,7 @@ function App() {
             </h3>
             <button
               className="toggle-filters-btn"
-              onClick={() => setShowFilters(!showFilters)}
+              onClick={() => setShowFilters((visible) => !visible)}
             >
               {showFilters ? "Hide Filters" : "Show Filters"}
             </button>
@@ -548,10 +785,10 @@ function App() {
                 <button
                   className="compact-btn"
                   onClick={() => {
-                    setSelectedReasons(reasonOptions);
+                    setSelectedReasons(legacyReasonOptions);
                     setCurrentPage(1);
                   }}
-                  disabled={reasonOptions.length === 0}
+                  disabled={legacyReasonOptions.length === 0}
                 >
                   All
                 </button>
@@ -562,14 +799,15 @@ function App() {
                     setCurrentPage(1);
                   }}
                   disabled={
-                    reasonOptions.length === 0 && selectedReasons.length === 0
+                    legacyReasonOptions.length === 0 &&
+                    selectedReasons.length === 0
                   }
                 >
                   Clear
                 </button>
               </div>
               <div className="reason-grid">
-                {reasonOptions.map((reason) => {
+                {legacyReasonOptions.map((reason) => {
                   const active = selectedReasons.includes(reason);
                   return (
                     <button
@@ -577,11 +815,11 @@ function App() {
                       className={`reason-filter-btn${active ? " active" : ""}`}
                       onClick={() => {
                         setCurrentPage(1);
-                        setSelectedReasons((prev) => {
-                          const has = prev.includes(reason);
-                          if (has) return prev.filter((r) => r !== reason);
-                          return [...prev, reason];
-                        });
+                        setSelectedReasons((prev) =>
+                          prev.includes(reason)
+                            ? prev.filter((value) => value !== reason)
+                            : [...prev, reason]
+                        );
                       }}
                     >
                       {reason}
@@ -594,10 +832,24 @@ function App() {
         </div>
       )}
 
+      {showSchemaFilters && (
+        <SchemaFilterPanel
+          schemaFilterMeta={schemaFilterMeta}
+          selectedSchemaTokens={selectedSchemaTokens}
+          geoStates={[selectedState]}
+          onChange={(tokens) => {
+            setSelectedSchemaTokens(tokens);
+            setCurrentPage(1);
+          }}
+        />
+      )}
+
+
       {loading ? (
+
         <div id="table-wrapper" role="status" aria-live="polite">
           <div style={{ padding: 16 }}>
-            <h2>Loading CSV…</h2>
+            <h2>Loading CSV...</h2>
             <p>Fetching configuration and data.</p>
           </div>
         </div>
@@ -606,6 +858,17 @@ function App() {
           <div style={{ padding: 16, color: "#b00020" }}>
             <h2>Error</h2>
             <pre>{error}</pre>
+          </div>
+        </div>
+      ) : schemaModeUnavailable ? (
+        <div id="table-wrapper" role="status" aria-live="polite">
+          <div className="empty-state">
+            <h2>Schema mode unavailable</h2>
+            <p>
+              This CSV does not yet include the future{" "}
+              <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column. Switch back to
+              legacy reasons to inspect this dataset.
+            </p>
           </div>
         </div>
       ) : filteredRows.length === 0 ? (
@@ -622,7 +885,7 @@ function App() {
             </div>
             <div className="pager-actions">
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
               >
                 Previous
@@ -632,7 +895,7 @@ function App() {
               </span>
               <button
                 onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
                 }
                 disabled={safeCurrentPage >= totalPages}
               >
@@ -644,23 +907,20 @@ function App() {
             <table>
               <thead>
                 <tr>
-                  {(visibleColumns.length > 0
-                    ? visibleColumns
-                    : displayHeaders
-                  ).map((h) => (
+                  {visibleTableColumns.map((header) => (
                     <th
-                      key={h}
+                      key={header}
                       className={
-                        h === firstStickyColumn ? "col-sticky" : undefined
+                        header === firstStickyColumn ? "col-sticky" : undefined
                       }
                     >
-                      {descriptionsOfColumns[h] ? (
+                      {descriptionsOfColumns[header] ? (
                         <div className="header-wrapper">
                           <span className="header-content">
-                            {headerFriendlyNames[h] || h}
+                            {headerFriendlyNames[header] || header}
                           </span>
                           <Tooltip
-                            content={descriptionsOfColumns[h]}
+                            content={descriptionsOfColumns[header]}
                             position="bottom"
                           >
                             <span className="tooltip-icon">?</span>
@@ -668,7 +928,7 @@ function App() {
                         </div>
                       ) : (
                         <span className="header-content">
-                          {headerFriendlyNames[h] || h}
+                          {headerFriendlyNames[header] || header}
                         </span>
                       )}
                     </th>
@@ -676,32 +936,29 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((row, idx) => (
-                  <tr key={idx}>
-                    {(visibleColumns.length > 0
-                      ? visibleColumns
-                      : displayHeaders
-                    ).map((h) => (
+                {pageRows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {visibleTableColumns.map((header) => (
                       <td
-                        key={h}
+                        key={header}
                         className={
                           [
-                            h === "Reasons_Non_Compliant"
+                            header === "Reasons_Non_Compliant"
                               ? "Reasons_Non_Compliant"
                               : "",
-                            h === firstStickyColumn ? "col-sticky" : "",
+                            header === firstStickyColumn ? "col-sticky" : "",
                           ]
                             .filter(Boolean)
                             .join(" ") || undefined
                         }
                       >
-                        {h && structuredColumns.has(String(h).toLowerCase()) ? (
+                        {STRUCTURED_COLUMNS.has(String(header).toLowerCase()) ? (
                           <span className="cell-content">
-                            {renderJSONCell(row[h])}
+                            {renderJSONCell(row[header])}
                           </span>
                         ) : (
                           <span className="cell-content">
-                            {String(row[h] ?? "")}
+                            {String(row[header] ?? "")}
                           </span>
                         )}
                       </td>
@@ -721,7 +978,7 @@ function App() {
             </div>
             <div className="pager-actions">
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={safeCurrentPage <= 1}
               >
                 Previous
@@ -731,7 +988,7 @@ function App() {
               </span>
               <button
                 onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  setCurrentPage((page) => Math.min(totalPages, page + 1))
                 }
                 disabled={safeCurrentPage >= totalPages}
               >

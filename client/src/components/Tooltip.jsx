@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useEffectEvent, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import "./../App.css";
 
@@ -22,7 +22,7 @@ export default function Tooltip({
     const triggerRef = useRef(null);
     const [coords, setCoords] = useState({ top: 0, left: 0 });
 
-    const calculatePosition = () => {
+    const calculatePosition = useEffectEvent(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
         const scrollX = window.scrollX;
@@ -40,7 +40,7 @@ export default function Tooltip({
         }
 
         setCoords({ top, left });
-    };
+    });
 
     const handleMouseEnter = () => {
         calculatePosition();
@@ -61,7 +61,7 @@ export default function Tooltip({
             window.removeEventListener("scroll", handleUpdate, true);
             window.removeEventListener("resize", handleUpdate);
         };
-    }, [isVisible]);
+    }, [isVisible, calculatePosition]);
 
     return (
         <>

@@ -1,0 +1,12 @@
+OptanonConsent_before_gpc,OptanonConsent_after_gpc,Compliance Classification
+isGpcEnabled=0,isGpcEnabled=0,OptanonConsent: Did Not Opt Out
+isGpcEnabled=0,isGpcEnabled=1,OptanonConsent: Opted Out
+isGpcEnabled=0,"""null"", ""no_gpc"", or invalid",OptanonConsent: <Invalid/Missing> OptanonConsent String after Opt-out
+isGpcEnabled=1,isGpcEnabled=0,OptanonConsent: Did Not Opt Out
+isGpcEnabled=1,isGpcEnabled=1,OptanonConsent: Opted Out
+isGpcEnabled=1,"""null"", ""no_gpc"", or invalid",OptanonConsent: <Invalid/Missing> OptanonConsent String after Opt-out
+"""null"", ""no_gpc"", or invalid",isGpcEnabled=0,OptanonConsent: Did Not Opt Out
+"""null"", ""no_gpc"", or invalid",isGpcEnabled=1,OptanonConsent: Opted Out
+"""null"", ""no_gpc"", or invalid",Invalid,OptanonConsent: <Invalid/Missing> OptanonConsent String after Opt-out
+Invalid,"""null"" or ""no_gpc""",OptanonConsent: <Invalid/Missing> OptanonConsent String after Opt-out
+"""Invalid"" means an OptanonConsent string with invalid values (i.e., characters other than 0 or 1 or longer strings ).",,
