@@ -180,11 +180,27 @@ a:hover {
   background: #fff;
   color: #000;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
-.chip--active {
+/* Specificity boost to override .toolbar button */
+.toolbar button.chip {
+  background-color: #fff;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.toolbar button.chip:hover {
   border-color: var(--brand);
-  background: #eaf6ea;
+  background-color: #f8fafc;
+  box-shadow: none;
+}
+
+.toolbar button.chip.chip--active {
+  border-color: var(--brand);
+  background-color: #eaf6ea;
+  color: var(--brand-dark);
+  font-weight: 600;
 }
 
 .chart-reason-tooltip-wrapper {
@@ -495,7 +511,7 @@ tbody tr:hover td.col-sticky {
 /* Unified into general Tooltip Styles */
 
 .chart-area {
-  height: 360px;
+  height: 500px;
 }
 
 /* ---------------------------

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, memo } from "react";
 import Papa from "papaparse";
 import {
   Chart as ChartJS,
@@ -12,6 +12,7 @@ import {
   Tooltip as ChartTooltip,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
+import ChartDataLabels from "chartjs-plugin-datalabels";
 
 import Tooltip from "./components/Tooltip";
 import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
@@ -31,55 +32,29 @@ ChartJS.register(
   BarElement,
   Title,
   Legend,
-  ChartTooltip
+  ChartTooltip,
+  ChartDataLabels
 );
 
 // ── Semantic color palettes keyed by compliance status ────────────────────────
-// Each palette has several shades so multiple same-status series stay distinct.
 const STATUS_COLOR_PALETTES = {
-  // Opted out → greens (compliant ✔)
   opted_out: [
-    "#15803d", // rich forest green
-    "#16a34a", // medium green
-    "#166534", // dark pine
-    "#4ade80", // mint
-    "#059669", // emerald
-    "#22c55e", // bright green
+    "#10b981", "#059669", "#047857", "#16a34a", "#15803d", "#22c55e",
   ],
-  // Did not opt out → reds (non-compliant ✘)
   did_not_opt_out: [
-    "#dc2626", // vivid red
-    "#b91c1c", // deep red
-    "#991b1b", // dark burgundy
-    "#ef4444", // bright red
-    "#e11d48", // rose red
-    "#f43f5e", // pink-red
+    "#3b82f6", "#2563eb", "#1d4ed8", "#60a5fa", "#3b82f6cc", "#2563ebcc",
   ],
-  // Invalid / missing → ambers (warning ⚠️)
   invalid_missing: [
-    "#d97706", // rich amber
-    "#b45309", // dark amber
-    "#f59e0b", // gold amber
-    "#92400e", // brown-amber
-    "#fbbf24", // bright yellow-amber
+    "#f59e0b", "#d97706", "#b45309", "#fbbf24", "#f59e0bcc",
   ],
   invalid: [
-    "#ea580c", // burnt orange
-    "#c2410c", // dark orange
-    "#f97316", // bright orange
-    "#9a3412", // deep sienna
+    "#ea580c", "#c2410c", "#f97316", "#9a3412",
   ],
-  // Not applicable → greys (neutral)
   not_applicable: [
-    "#64748b", // slate
-    "#6b7280", // neutral grey
-    "#475569", // dark slate
-    "#94a3b8", // light slate
-    "#334155", // very dark slate
+    "#94a3b8", "#64748b", "#475569", "#cbd5e1", "#334155",
   ],
 };
 
-// Legacy reason series (non-schema mode) keep the original green-ish palette
 const LEGACY_COLOR_PALETTE = [
   "#2e7d32", "#1b5e20", "#43a047", "#66bb6a", "#81c784",
   "#26a69a", "#00796b", "#558b2f", "#689f38", "#8bc34a",
@@ -92,89 +67,49 @@ const SPECIAL_SERIES = {
 };
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
-  [SPECIAL_SERIES.PNC_SITES]:
-    "Counts rows in the PotentiallyNonCompliantSites dataset for each month.",
-  [SPECIAL_SERIES.NULL_SITES]:
-    "Counts rows in the NullSites dataset for each month.",
+  [SPECIAL_SERIES.PNC_SITES]: "Counts rows in the PotentiallyNonCompliantSites dataset for each month.",
+  [SPECIAL_SERIES.NULL_SITES]: "Counts rows in the NullSites dataset for each month.",
 };
 
 const PNC_REASON_LIST = [
-  "Invalid_uspapi",
-  "Invalid_usp_cookies",
-  "uspapi",
-  "usp_cookies",
-  "MissingAfter_uspapi",
-  "MissingAfter_usp_cookies",
-  "Invalid_GPPString",
-  "SaleOptOut_USNAT",
-  "SharingOptOut_USNAT",
-  "TargetedAdvertisingOptOut_USNAT",
-  "SaleOptOut_State",
-  "SharingOptOut_State",
-  "TargetedAdvertisingOptOut_State",
-  "MissingAfterGPPString",
-  "Invalid_OptanonConsent",
-  "OptanonConsent",
-  "MissingAfterOptanonConsent",
-  "Well-Known",
-  "Invalid_Well-Known",
-  "SegmentSwitchGPP",
+  "Invalid_uspapi", "Invalid_usp_cookies", "uspapi", "usp_cookies",
+  "MissingAfter_uspapi", "MissingAfter_usp_cookies", "Invalid_GPPString",
+  "SaleOptOut_USNAT", "SharingOptOut_USNAT", "TargetedAdvertisingOptOut_USNAT",
+  "SaleOptOut_State", "SharingOptOut_State", "TargetedAdvertisingOptOut_State",
+  "MissingAfterGPPString", "Invalid_OptanonConsent", "OptanonConsent",
+  "MissingAfterOptanonConsent", "Well-Known", "Invalid_Well-Known", "SegmentSwitchGPP",
 ];
 
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
 
 function parseReasons(value) {
   if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
+  if (Array.isArray(value)) return value.map(i => String(i).trim()).filter(Boolean);
   const str = String(value).trim();
-  const jsonLike = str
-    .replace(/^\s*\[\s*/, "[")
-    .replace(/\s*\]\s*$/, "]")
-    .replace(/'\s*,\s*'/g, '","')
-    .replace(/^\['/, '["')
-    .replace(/'\]$/, '"]')
-    .replace(/'/g, '"');
+  const jsonLike = str.replace(/^\s*\[\s*/, "[").replace(/\s*\]\s*$/, "]")
+    .replace(/'\s*,\s*'/g, '","').replace(/^\['/, '["').replace(/'\]$/, '"]').replace(/'/g, '"');
   try {
     const parsed = JSON.parse(jsonLike);
-    if (Array.isArray(parsed)) {
-      return parsed.map((item) => String(item).trim()).filter(Boolean);
-    }
-  } catch {
-    // Fall back to the simple split below.
-  }
-  return str
-    .replace(/^\[|\]$/g, "")
-    .split(",")
-    .map((item) => item.replace(/^[\s'"]+|[\s'"]+$/g, "").trim())
-    .filter(Boolean);
+    if (Array.isArray(parsed)) return parsed.map(i => String(i).trim()).filter(Boolean);
+  } catch {}
+  return str.replace(/^\[|\]$/g, "").split(",").map(i => i.replace(/^[\s'"]+|[\s'"]+$/g, "").trim()).filter(Boolean);
 }
 
 function normalizeRow(row) {
   const normalized = {};
-  Object.keys(row || {}).forEach((key) => {
-    normalized[String(key).trim()] = row[key];
-  });
+  Object.keys(row || {}).forEach(key => { normalized[String(key).trim()] = row[key]; });
   return normalized;
 }
 
 function parseCsv(publicCsvPath) {
   return new Promise((resolve, reject) => {
     Papa.parse(publicCsvPath, {
-      download: true,
-      header: true,
-      dynamicTyping: false,
-      skipEmptyLines: true,
-      complete: (parsed) => {
-        resolve({
-          headers: (parsed.meta?.fields || []).map((field) => String(field).trim()),
-          rows: (parsed.data || []).map(normalizeRow),
-        });
-      },
-      error: (err) => {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      },
+      download: true, header: true, skipEmptyLines: true,
+      complete: parsed => resolve({
+        headers: (parsed.meta?.fields || []).map(f => String(f).trim()),
+        rows: (parsed.data || []).map(normalizeRow),
+      }),
+      error: err => reject(err instanceof Error ? err : new Error(String(err))),
     });
   });
 }
@@ -187,119 +122,91 @@ function getChartParam(key, fallback) {
 function getChartArrayParam(key, fallback) {
   if (typeof window === "undefined") return fallback;
   const val = new URLSearchParams(window.location.search).get(key);
-  if (val) return val.split(",").map((s) => s.trim()).filter(Boolean);
+  if (val) return val.split(",").map(s => s.trim()).filter(Boolean);
   return fallback;
 }
 
-export default function ReasonTrendsChart({
-  analysisMode,
-  timePeriods,
-  stateMonths,
-}) {
-  const [selectedSeries, setSelectedSeries] = useState(() =>
-    getChartArrayParam("cseries", [SPECIAL_SERIES.PNC_SITES])
-  );
-  const [chartType, setChartType] = useState(() =>
-    getChartParam("ctype", "line")
-  );
+const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePeriods, stateMonths }) {
+  const [selectedSeries, setSelectedSeries] = useState(() => getChartArrayParam("cseries", [SPECIAL_SERIES.PNC_SITES]));
+  const [chartType, setChartType] = useState(() => getChartParam("ctype", "line"));
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToPncRows, setStateMonthToPncRows] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
-  const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] =
-    useState({});
+  const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
   const [schemaParseErrorCount, setSchemaParseErrorCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedStates, setSelectedStates] = useState(() =>
-    getChartArrayParam("cstates", ["CA"])
-  );
+  const [selectedStates, setSelectedStates] = useState(() => getChartArrayParam("cstates", ["CA"]));
+  const [showDataLabels, setShowDataLabels] = useState(false);
   const [reasonDescriptions, setReasonDescriptions] = useState({});
   const chartRef = useRef(null);
 
-  // Sync chart-specific state to URL params (cseries, cstates, ctype).
-  // This effect runs before App.jsx's URL sync (child effects fire first),
-  // so App.jsx will read the already-updated URL and safely append its own params.
+  // Reset isolation when main filters change
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current._isolatedIndices = null;
+    }
+  }, [selectedSeries, selectedStates, analysisMode, chartType]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-
     if (selectedSeries.length > 0) params.set("cseries", selectedSeries.join(","));
     else params.delete("cseries");
-
-    if (
-      selectedStates.length !== 1 ||
-      selectedStates[0] !== "CA"
-    ) {
-      params.set("cstates", selectedStates.join(","));
-    } else {
-      params.delete("cstates");
-    }
-
+    if (selectedStates.length !== 1 || selectedStates[0] !== "CA") params.set("cstates", selectedStates.join(","));
+    else params.delete("cstates");
     if (chartType !== "line") params.set("ctype", chartType);
     else params.delete("ctype");
-
-    const newUrl =
-      params.toString()
-        ? window.location.pathname + "?" + params.toString()
-        : window.location.pathname;
-    if (newUrl !== window.location.pathname + window.location.search) {
-      window.history.replaceState(null, "", newUrl);
-    }
+    const newUrl = params.toString() ? window.location.pathname + "?" + params.toString() : window.location.pathname;
+    if (newUrl !== window.location.pathname + window.location.search) window.history.replaceState(null, "", newUrl);
   }, [selectedSeries, selectedStates, chartType]);
 
   function handleDownload() {
     const chart = chartRef.current;
     if (!chart) return;
 
-    // To ensure white background, we draw the chart canvas onto a new canvas with a white fill
+    chart.stop();
+    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+    chart.setActiveElements([]);
+
+    const originalDatasets = chart.data.datasets;
+    const originalLegendFilter = chart.options.plugins.legend.labels.filter;
+
+    // Filter hidden for export
+    chart.options.plugins.legend.labels.filter = (item) => !originalDatasets[item.datasetIndex].hidden;
+    chart.data.datasets = originalDatasets.filter(ds => !ds.hidden);
+    
+    chart.update("none");
+
     const canvas = chart.canvas;
     const newCanvas = document.createElement("canvas");
-    newCanvas.width = canvas.width;
-    newCanvas.height = canvas.height;
+    newCanvas.width = canvas.width; newCanvas.height = canvas.height;
     const ctx = newCanvas.getContext("2d");
-
-    // Fill background
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
-
-    // Draw the original chart
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
     ctx.drawImage(canvas, 0, 0);
 
     const url = newCanvas.toDataURL("image/png", 1);
-    const a = document.createElement("a");
-    a.href = url;
+    const a = document.createElement("a"); a.href = url;
     a.download = `Trend_${analysisMode}_${selectedStates.join("_")}.png`;
     a.click();
+
+    // Restore
+    chart.data.datasets = originalDatasets;
+    chart.options.plugins.legend.labels.filter = originalLegendFilter;
+    chart.update("none");
   }
 
   useEffect(() => {
     let cancelled = false;
-
     fetch("/classifications_of_compliance.json")
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error("Failed to load classifications_of_compliance.json")
-            )
-      )
-      .then((data) => {
-        if (!cancelled && data && typeof data === "object") {
-          setReasonDescriptions(data);
-        }
-      })
-      .catch((err) => {
-        console.warn("Failed to load reason descriptions:", err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .then(res => res.ok ? res.json() : Promise.reject(new Error("Failed to load")))
+      .then(data => { if (!cancelled) setReasonDescriptions(data); })
+      .catch(err => console.warn(err));
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    setSelectedSeries((prev) => {
-      // Keep special series when switching modes, but clear the mode-specific ones
+    setSelectedSeries(prev => {
       const specials = prev.filter(k => k === SPECIAL_SERIES.PNC_SITES || k === SPECIAL_SERIES.NULL_SITES);
       return specials.length > 0 ? specials : [SPECIAL_SERIES.PNC_SITES];
     });
@@ -307,546 +214,220 @@ export default function ReasonTrendsChart({
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadSelectedStates() {
-      setLoading(true);
-      setError("");
-
+      setLoading(true); setError("");
       try {
         const states = Array.isArray(selectedStates) ? selectedStates : [];
         if (states.length === 0) {
-          setStateMonthToAllRecords({});
-          setStateMonthToPncRows({});
-          setStateMonthToNullRows({});
-          setStateMonthToSchemaAvailability({});
-          setSchemaParseErrorCount(0);
-          setLoading(false);
-          return;
+          setStateMonthToAllRecords({}); setStateMonthToPncRows({}); setStateMonthToNullRows({}); setStateMonthToSchemaAvailability({});
+          setLoading(false); return;
         }
-
-        const perStateResults = await Promise.all(
-          states.map(async (stateCode) => {
-            const monthKeys = (stateMonths && stateMonths[stateCode]) || [];
-            const monthResults = await Promise.all(
-              monthKeys.map(async (monthKey) => {
-                const allPath = `/${stateCode}/Crawl_Data_${stateCode} - ${monthKey}.csv`;
-                const pncPath = `/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`;
-                const nullPath = `/${stateCode}/Crawl_Data_${stateCode} - NullSites${monthKey}.csv`;
-
-                const [allData, pncData, nullData] = await Promise.all([
-                  parseCsv(allPath),
-                  parseCsv(pncPath),
-                  parseCsv(nullPath),
-                ]);
-
-                const hasSchemaColumn = allData.headers.includes(
-                  SCHEMA_CLASSIFICATION_COLUMN
-                );
-                const allRecords = allData.rows.map((row) => ({
-                  row,
-                  schema: getSchemaClassificationForRow(row),
-                }));
-                const parseErrors = hasSchemaColumn
-                  ? allRecords.reduce(
-                      (count, record) =>
-                        count + (record.schema.parseError ? 1 : 0),
-                      0
-                    )
-                  : 0;
-
-                return {
-                  key: monthKey,
-                  allRecords,
-                  pncRows: pncData.rows,
-                  nullRows: nullData.rows,
-                  hasSchemaColumn,
-                  parseErrors,
-                };
-              })
-            );
-
-            return { stateCode, monthResults };
-          })
-        );
-
+        const perStateResults = await Promise.all(states.map(async (stateCode) => {
+          const monthKeys = stateMonths[stateCode] || [];
+          const monthResults = await Promise.all(monthKeys.map(async (monthKey) => {
+            const [allData, pncData, nullData] = await Promise.all([
+              parseCsv(`/${stateCode}/Crawl_Data_${stateCode} - ${monthKey}.csv`),
+              parseCsv(`/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`),
+              parseCsv(`/${stateCode}/Crawl_Data_${stateCode} - NullSites${monthKey}.csv`),
+            ]);
+            const allRecords = allData.rows.map(row => ({ row, schema: getSchemaClassificationForRow(row) }));
+            return { key: monthKey, allRecords, pncRows: pncData.rows, nullRows: nullData.rows, hasSchemaColumn: allData.headers.includes(SCHEMA_CLASSIFICATION_COLUMN) };
+          }));
+          return { stateCode, monthResults };
+        }));
         if (cancelled) return;
-
-        const nextAllRecords = {};
-        const nextPncRows = {};
-        const nextNullRows = {};
-        const nextSchemaAvailability = {};
-        let nextParseErrorCount = 0;
-
+        const nextAll = {}; const nextPnc = {}; const nextNull = {}; const nextAvail = {};
         perStateResults.forEach(({ stateCode, monthResults }) => {
-          nextAllRecords[stateCode] = {};
-          nextPncRows[stateCode] = {};
-          nextNullRows[stateCode] = {};
-          nextSchemaAvailability[stateCode] = {};
-
-          monthResults.forEach(
-            ({
-              key,
-              allRecords,
-              pncRows,
-              nullRows,
-              hasSchemaColumn,
-              parseErrors,
-            }) => {
-              nextAllRecords[stateCode][key] = allRecords;
-              nextPncRows[stateCode][key] = pncRows;
-              nextNullRows[stateCode][key] = nullRows;
-              nextSchemaAvailability[stateCode][key] = hasSchemaColumn;
-              nextParseErrorCount += parseErrors;
-            }
-          );
+          nextAll[stateCode] = {}; nextPnc[stateCode] = {}; nextNull[stateCode] = {}; nextAvail[stateCode] = {};
+          monthResults.forEach(m => {
+            nextAll[stateCode][m.key] = m.allRecords; nextPnc[stateCode][m.key] = m.pncRows;
+            nextNull[stateCode][m.key] = m.nullRows; nextAvail[stateCode][m.key] = m.hasSchemaColumn;
+          });
         });
-
-        setStateMonthToAllRecords(nextAllRecords);
-        setStateMonthToPncRows(nextPncRows);
-        setStateMonthToNullRows(nextNullRows);
-        setStateMonthToSchemaAvailability(nextSchemaAvailability);
-        setSchemaParseErrorCount(nextParseErrorCount);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+        setStateMonthToAllRecords(nextAll); setStateMonthToPncRows(nextPnc); setStateMonthToNullRows(nextNull); setStateMonthToSchemaAvailability(nextAvail);
+      } catch (err) { if (!cancelled) setError(err.message); } finally { if (!cancelled) setLoading(false); }
     }
-
-    loadSelectedStates();
-
-    return () => {
-      cancelled = true;
-    };
+    loadSelectedStates(); return () => { cancelled = true; };
   }, [selectedStates, stateMonths]);
 
   const unifiedMonthKeys = useMemo(() => {
-    const states = Array.isArray(selectedStates) ? selectedStates : [];
-    if (!Array.isArray(timePeriods) || timePeriods.length === 0) return [];
-    if (states.length === 0) return timePeriods.map((period) => period.key);
-
+    const states = selectedStates || [];
     const keySet = new Set();
-    states.forEach((stateCode) => {
-      const keys = (stateMonths && stateMonths[stateCode]) || [];
-      keys.forEach((key) => keySet.add(key));
-    });
-
-    return timePeriods
-      .filter((period) => keySet.has(period.key))
-      .map((period) => period.key);
+    states.forEach(s => (stateMonths[s] || []).forEach(k => keySet.add(k)));
+    return (timePeriods || []).filter(p => keySet.has(p.key)).map(p => p.key);
   }, [selectedStates, stateMonths, timePeriods]);
 
   const labels = useMemo(() => {
-    const keyToLabel = new Map(
-      (timePeriods || []).map((period) => [period.key, period.label])
-    );
-    return unifiedMonthKeys.map((key) => keyToLabel.get(key) || key);
+    const keyToLabel = new Map((timePeriods || []).map(p => [p.key, p.label]));
+    return unifiedMonthKeys.map(k => keyToLabel.get(k) || k);
   }, [timePeriods, unifiedMonthKeys]);
 
   const schemaSeriesMeta = useMemo(() => {
-    const labelsByToken = {};
-    const descriptionsByToken = {};
-    const tokenSet = new Set();
-
-    selectedStates.forEach((stateCode) => {
-      unifiedMonthKeys.forEach((monthKey) => {
-        const records = stateMonthToAllRecords[stateCode]?.[monthKey] || [];
-        records.forEach(({ schema }) => {
-          schema.tokens.forEach((token) => {
-            tokenSet.add(token);
-            labelsByToken[token] = schema.labels[token] || token;
-            descriptionsByToken[token] = schema.descriptions[token] || "";
-          });
-        });
-      });
-    });
-
-    const tokens = sortSchemaTokens(tokenSet);
-    return { tokens, labelsByToken, descriptionsByToken };
+    const labelsByToken = {}; const descriptionsByToken = {}; const tokenSet = new Set();
+    selectedStates.forEach(s => unifiedMonthKeys.forEach(m => {
+      (stateMonthToAllRecords[s]?.[m] || []).forEach(({ schema }) => schema.tokens.forEach(t => {
+        tokenSet.add(t); labelsByToken[t] = schema.labels[t] || t; descriptionsByToken[t] = schema.descriptions[t] || "";
+      }));
+    }));
+    return { tokens: sortSchemaTokens(tokenSet), labelsByToken, descriptionsByToken };
   }, [selectedStates, stateMonthToAllRecords, unifiedMonthKeys]);
-
-  const schemaModeAvailable = useMemo(() => {
-    return selectedStates.some((stateCode) =>
-      unifiedMonthKeys.some(
-        (monthKey) => stateMonthToSchemaAvailability[stateCode]?.[monthKey]
-      )
-    );
-  }, [selectedStates, stateMonthToSchemaAvailability, unifiedMonthKeys]);
 
   const seriesOptions = useMemo(() => {
     const base = [
-      {
-        key: SPECIAL_SERIES.PNC_SITES,
-        label: SPECIAL_SERIES.PNC_SITES,
-        description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.PNC_SITES],
-      },
-      {
-        key: SPECIAL_SERIES.NULL_SITES,
-        label: SPECIAL_SERIES.NULL_SITES,
-        description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES],
-      },
+      { key: SPECIAL_SERIES.PNC_SITES, label: SPECIAL_SERIES.PNC_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.PNC_SITES] },
+      { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
     ];
-
-    if (analysisMode === ANALYSIS_MODES.SCHEMA) {
-      return [
-        ...base,
-        ...schemaSeriesMeta.tokens.map((token) => ({
-          key: token,
-          label: schemaSeriesMeta.labelsByToken[token] || token,
-          description: schemaSeriesMeta.descriptionsByToken[token] || "",
-        })),
-      ];
-    }
-
-    return [
-      ...base,
-      ...PNC_REASON_LIST.map((reason) => ({
-        key: reason,
-        label: reason,
-        description: reasonDescriptions[reason] || "",
-      })),
-    ];
+    if (analysisMode === ANALYSIS_MODES.SCHEMA) return [...base, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
+    return [...base, ...PNC_REASON_LIST.map(r => ({ key: r, label: r, description: reasonDescriptions[r] || "" }))];
   }, [analysisMode, reasonDescriptions, schemaSeriesMeta]);
-
-  useEffect(() => {
-    const optionKeys = new Set(seriesOptions.map((option) => option.key));
-    setSelectedSeries((previous) =>
-      previous.filter((value) => optionKeys.has(value))
-    );
-  }, [seriesOptions]);
 
   const datasets = useMemo(() => {
     if (selectedSeries.length === 0) return [];
-
-    const allDatasets = [];
-    const activeStates =
-      selectedStates && selectedStates.length > 0 ? selectedStates : [];
-
-    // Track how many times each status group has been used so successive
-    // same-status series cycle through different shades within their palette.
-    const statusVarCounters = {};
-
-    activeStates.forEach((stateCode) => {
-      selectedSeries.forEach((seriesKey) => {
-        // ── Semantic color assignment ──────────────────────────────────────
-        let color;
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
-          // Always a punchy warning red — distinct from the did_not_opt_out palette
-          color = "#c2410c";
-        } else if (seriesKey === SPECIAL_SERIES.NULL_SITES) {
-          color = "#94a3b8"; // light slate grey
-        } else {
-          const parsed = parseSchemaToken(seriesKey);
-          const statusKey = parsed?.status ?? "__legacy";
-          const palette =
-            STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
-          const idx = statusVarCounters[statusKey] ?? 0;
-          statusVarCounters[statusKey] = idx + 1;
-          color = palette[idx % palette.length];
+    const allDatasets = []; const statusVarCounters = {};
+    selectedStates.forEach(stateCode => selectedSeries.forEach(seriesKey => {
+      let color;
+      if (seriesKey === SPECIAL_SERIES.PNC_SITES) color = "#c2410c";
+      else if (seriesKey === SPECIAL_SERIES.NULL_SITES) color = "#94a3b8";
+      else {
+        const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
+        const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
+        const idx = statusVarCounters[statusKey] ?? 0;
+        statusVarCounters[statusKey] = idx + 1;
+        color = palette[idx % palette.length];
+      }
+      let data = unifiedMonthKeys.map(m => {
+        if (seriesKey === SPECIAL_SERIES.PNC_SITES) return stateMonthToPncRows[stateCode]?.[m]?.length;
+        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;
+        if (analysisMode === ANALYSIS_MODES.SCHEMA) {
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
         }
-        // ──────────────────────────────────────────────────────────────────
-
-        let data;
-
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
-          data = unifiedMonthKeys.map((monthKey) => {
-            const rows = stateMonthToPncRows[stateCode]?.[monthKey];
-            return Array.isArray(rows) ? rows.length : null;
-          });
-        } else if (seriesKey === SPECIAL_SERIES.NULL_SITES) {
-          data = unifiedMonthKeys.map((monthKey) => {
-            const rows = stateMonthToNullRows[stateCode]?.[monthKey];
-            return Array.isArray(rows) ? rows.length : null;
-          });
-        } else if (analysisMode === ANALYSIS_MODES.SCHEMA) {
-          data = unifiedMonthKeys.map((monthKey) => {
-            const hasSchemaColumn =
-              stateMonthToSchemaAvailability[stateCode]?.[monthKey];
-            if (!hasSchemaColumn) return null;
-
-            const records = stateMonthToAllRecords[stateCode]?.[monthKey];
-            if (!Array.isArray(records)) return null;
-
-            let count = 0;
-            records.forEach(({ schema }) => {
-              if (schema.tokens.includes(seriesKey)) {
-                count += 1;
-              }
-            });
-            return count;
-          });
-        } else {
-          data = unifiedMonthKeys.map((monthKey) => {
-            const rows = stateMonthToPncRows[stateCode]?.[monthKey];
-            if (!Array.isArray(rows)) return null;
-
-            let count = 0;
-            rows.forEach((row) => {
-              const reasons = parseReasons(row?.Reasons_Non_Compliant);
-              if (reasons.includes(seriesKey)) {
-                count += 1;
-              }
-            });
-            return count;
-          });
-        }
-
-        const seriesOption = seriesOptions.find(
-          (option) => option.key === seriesKey
-        );
-
-        allDatasets.push({
-          label: `${stateCode} - ${seriesOption?.label || seriesKey}`,
-          data,
-          borderColor: color,
-          backgroundColor: chartType === "line" ? color : `${color}80`,
-          fill: false,
-          tension: 0.3,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
-        });
+        return (stateMonthToPncRows[stateCode]?.[m] || []).filter(r => parseReasons(r.Reasons_Non_Compliant).includes(seriesKey)).length;
       });
-    });
-
+      allDatasets.push({
+        label: `${stateCode} - ${seriesOptions.find(o => o.key === seriesKey)?.label || seriesKey}`,
+        data, borderColor: color, backgroundColor: chartType === "line" ? color : `${color}80`,
+        fill: false, tension: 0.3, pointRadius: 4, pointHoverRadius: 6,
+        borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
+      });
+    }));
     return allDatasets;
-  }, [
-    analysisMode,
-    chartType,
-    selectedSeries,
-    selectedStates,
-    seriesOptions,
-    stateMonthToAllRecords,
-    stateMonthToNullRows,
-    stateMonthToPncRows,
-    stateMonthToSchemaAvailability,
-    unifiedMonthKeys,
-  ]);
+  }, [analysisMode, chartType, selectedSeries, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToPncRows, stateMonthToSchemaAvailability, unifiedMonthKeys]);
 
-  const data = useMemo(
-    () => ({
-      labels,
-      datasets,
-    }),
-    [datasets, labels]
-  );
-
-  const options = useMemo(
-    () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: {
-        padding: {
-          top: 10,
-          bottom: 10,
-          left: 10,
-          right: 20,
-        },
+  const options = useMemo(() => ({
+    responsive: true, maintainAspectRatio: false, normalized: true, customType: chartType,
+    layout: { padding: { top: 10, bottom: 10, left: 10, right: 20 } },
+    plugins: {
+      datalabels: {
+        display: showDataLabels,
+        backgroundColor: "rgba(255, 255, 255, 0.9)",
+        borderRadius: 4,
+        color: (ctx) => ctx.dataset.borderColor,
+        font: { weight: "bold", size: 10 },
+        formatter: (val) => (val > 0 ? val.toLocaleString() : ""),
+        padding: 4,
+        offset: 8,
+        anchor: "end",
+        align: "top",
       },
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: {
-            boxWidth: 12,
-            boxHeight: 12,
-            usePointStyle: true,
-            pointStyle: "circle",
-            padding: 20,
-            font: { size: 12, family: "'Segoe UI', sans-serif", weight: "500" },
-            color: "#475569",
-          },
+      legend: {
+        position: "bottom",
+        onClick: (e, item, legend) => {
+          const index = item.datasetIndex; const chart = legend.chart; const total = chart.data.datasets.length;
+          if (!chart._isolatedIndices) chart._isolatedIndices = new Set();
+          const isolated = chart._isolatedIndices;
+          if (isolated.size === 0 || isolated.size === total) {
+            isolated.clear(); isolated.add(index);
+            chart.data.datasets.forEach((ds, i) => { ds.hidden = i !== index; });
+          } else {
+            if (isolated.has(index)) {
+              isolated.delete(index); chart.data.datasets[index].hidden = true;
+              if (isolated.size === 0) chart.data.datasets.forEach(ds => { ds.hidden = false; });
+            } else {
+              isolated.add(index); chart.data.datasets[index].hidden = false;
+              if (isolated.size === total) { isolated.clear(); chart.data.datasets.forEach(ds => { ds.hidden = false; }); }
+            }
+          }
+          chart.update();
         },
-        tooltip: {
-          mode: "index",
-          intersect: false,
-          backgroundColor: "rgba(15, 23, 42, 0.9)",
-          padding: 12,
-          titleFont: { size: 14, weight: "700", family: "'Segoe UI', sans-serif" },
-          bodyFont: { size: 13, family: "'Segoe UI', sans-serif" },
-          cornerRadius: 8,
-          usePointStyle: true,
+        onHover: (evt, item, legend) => {
+          const chart = legend.chart; const index = item.datasetIndex; const isLine = chart.options.customType === "line";
+          chart.data.datasets.forEach((ds, i) => {
+            const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
+            if (i === index) {
+              ds.borderWidth = isLine ? 4 : ds.borderWidth; ds.borderColor = baseColor; ds.backgroundColor = baseColor;
+              ds.pointBackgroundColor = baseColor; ds.pointBorderColor = baseColor;
+              if (isLine) ds.pointRadius = 4;
+            } else {
+              ds.borderWidth = isLine ? 1 : ds.borderWidth; ds.borderColor = baseColor + "25"; ds.backgroundColor = baseColor + "20";
+              ds.pointBackgroundColor = baseColor; ds.pointBorderColor = baseColor;
+              if (isLine) ds.pointRadius = 4;
+            }
+          });
+          chart.update("none");
         },
-        title: {
-          display: true,
-          text:
-            analysisMode === ANALYSIS_MODES.SCHEMA
-              ? "Schema classification trends over months"
-              : "Reason trends over months",
-          font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
-          color: "#1e293b",
-          padding: { bottom: 20 },
+        onLeave: (evt, item, legend) => {
+          const chart = legend.chart; const isLine = chart.options.customType === "line";
+          chart.data.datasets.forEach(ds => {
+            const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
+            ds.borderWidth = isLine ? 3 : 0; ds.borderColor = baseColor; ds.backgroundColor = isLine ? baseColor : baseColor + "80";
+            ds.pointBackgroundColor = baseColor; ds.pointBorderColor = baseColor;
+            if (isLine) ds.pointRadius = 4;
+          });
+          chart.update("none");
         },
+        labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: "circle", padding: 12, font: { size: 11, family: "'Segoe UI', sans-serif", weight: "500" }, color: "#475569" },
       },
-      scales: {
-        y: {
-          beginAtZero: true,
-          grid: {
-            color: "rgba(0, 0, 0, 0.05)",
-            drawBorder: false,
-          },
-          border: {
-            display: false,
-          },
-          ticks: {
-            font: { size: 12, family: "'Segoe UI', sans-serif" },
-            color: "#64748b",
-          },
-          title: {
-            display: true,
-            text: "Number of Sites",
-            font: { size: 12, weight: "600", family: "'Segoe UI', sans-serif" },
-            color: "#475569",
-          },
-        },
-        x: {
-          grid: {
-            display: false,
-          },
-          border: {
-            display: false,
-          },
-          ticks: {
-            font: { size: 12, family: "'Segoe UI', sans-serif" },
-            color: "#64748b",
-          },
-          title: {
-            display: true,
-            text: "Month",
-            font: { size: 12, weight: "600", family: "'Segoe UI', sans-serif" },
-            color: "#475569",
-          },
-        },
-      },
-    }),
-    [analysisMode]
-  );
+      tooltip: { mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12, titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true },
+      title: { display: true, text: analysisMode === ANALYSIS_MODES.SCHEMA ? "Schema classification trends over months" : "Reason trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
+    },
+    scales: {
+      y: { beginAtZero: true, grid: { color: "rgba(0, 0, 0, 0.05)", drawBorder: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Number of Sites", font: { size: 12, weight: "600" }, color: "#475569" } },
+      x: { grid: { display: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Month", font: { size: 12, weight: "600" }, color: "#475569" } },
+    },
+  }), [analysisMode, chartType, showDataLabels]);
 
   return (
     <div className="card card--padded section">
-      <h2 className="section-title">Track Compliance Evolution Over Time</h2>
-      <div className="toolbar" role="group" aria-label="Chart display options">
-        <label htmlFor="chart-type-select">Chart Type:</label>
-        <select
-          id="chart-type-select"
-          value={chartType}
-          onChange={(e) => setChartType(e.target.value)}
-        >
-          <option value="line">Line</option>
-          <option value="bar">Bar</option>
-        </select>
-      </div>
-
-      <div className="chip-group" role="group" aria-label="States">
-        {AVAILABLE_STATES.map((stateCode) => {
-          const active = selectedStates.includes(stateCode);
-          return (
-            <button
-              key={stateCode}
-              className={`chip${active ? " chip--active" : ""}`}
-              onClick={() =>
-                setSelectedStates((prev) =>
-                  prev.includes(stateCode)
-                    ? prev.filter((value) => value !== stateCode)
-                    : [...prev, stateCode]
-                )
-              }
-            >
-              {stateCode}
-            </button>
-          );
-        })}
-      </div>
-
-      {analysisMode === ANALYSIS_MODES.SCHEMA && schemaParseErrorCount > 0 && (
-        <div className="notice-card notice-card--warning" role="status">
-          Ignored invalid schema classifications in {schemaParseErrorCount} row
-          {schemaParseErrorCount === 1 ? "" : "s"} while building chart
-          datasets.
+      <h2>Track Compliance Evolution Over Time</h2>
+      <div className="toolbar">
+        <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <label htmlFor="chart-type-select">Chart Type:</label>
+          <select id="chart-type-select" value={chartType} onChange={e => setChartType(e.target.value)}>
+            <option value="line">Line Trend</option><option value="bar">Bar Comparison</option>
+          </select>
         </div>
-      )}
-
-      {/* Chart Schema/Reason Filters (hierarchical panel) */}
-      <ChartSchemaFilterPanel
-        seriesOptions={seriesOptions}
-        selectedSeries={selectedSeries}
-        selectedStates={selectedStates}
-        onToggle={(key) =>
-          setSelectedSeries((prev) =>
-            prev.includes(key)
-              ? prev.filter((k) => k !== key)
-              : [...prev, key]
-          )
-        }
-        isSchemaMode={analysisMode === ANALYSIS_MODES.SCHEMA}
-      />
-
+        <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px", borderLeft: "1px solid #e2e8f0", paddingLeft: "16px", marginLeft: "4px" }}>
+          <span style={{ fontSize: "14px", fontWeight: "500", color: "#475569" }}>States:</span>
+          <div className="chip-group">
+            {AVAILABLE_STATES.map(s => {
+              const active = selectedStates.includes(s);
+              return <button key={s} className={`chip${active ? " chip--active" : ""}`} style={{ padding: "4px 12px", fontSize: "12px" }} onClick={() => setSelectedStates(prev => prev.includes(s) ? prev.filter(v => v !== s) : [...prev, s])}>{s}</button>;
+            })}
+          </div>
+        </div>
+      </div>
+      <ChartSchemaFilterPanel seriesOptions={seriesOptions} selectedSeries={selectedSeries} selectedStates={selectedStates} onToggle={k => setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k])} isSchemaMode={analysisMode === ANALYSIS_MODES.SCHEMA} />
       {loading && <div style={{ padding: 8 }}>Loading chart data...</div>}
-      {error && (
-        <div style={{ padding: 8, color: "#b00020" }}>
-          Error loading chart data: {error}
-        </div>
-      )}
-      {!loading && !error && selectedStates.length === 0 && (
-        <div style={{ padding: 8 }}>Select one or more states to view the chart.</div>
-      )}
-      {!loading &&
-        !error &&
-        selectedStates.length > 0 &&
-        analysisMode === ANALYSIS_MODES.SCHEMA &&
-        !schemaModeAvailable && (
-          <div className="empty-state">
-            <h3>Schema mode unavailable</h3>
-            <p>
-              The selected monthly CSVs do not yet include the future{" "}
-              <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column.
-            </p>
+      {error && <div style={{ padding: 8, color: "#b00020" }}>Error: {error}</div>}
+      {!loading && !error && selectedStates.length > 0 && (
+        <>
+          <div className="chart-area">{chartType === "line" ? <Line ref={chartRef} data={{ labels, datasets }} options={options} /> : <Bar ref={chartRef} data={{ labels, datasets }} options={options} />}</div>
+          <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={showDataLabels}
+                onChange={(e) => setShowDataLabels(e.target.checked)}
+              />
+              Show data labels
+            </label>
+            <button className="btn-download" onClick={handleDownload}>Download PNG</button>
           </div>
-        )}
-      {!loading &&
-        !error &&
-        selectedStates.length > 0 &&
-        (analysisMode !== ANALYSIS_MODES.SCHEMA || schemaModeAvailable) &&
-        selectedSeries.length === 0 && (
-          <div style={{ padding: 8 }}>
-            {analysisMode === ANALYSIS_MODES.SCHEMA
-              ? "Select one or more schema classifications to view the chart."
-              : "Select one or more reasons to view the chart."}
-          </div>
-        )}
-      {!loading &&
-        !error &&
-        selectedSeries.length > 0 &&
-        selectedStates.length > 0 &&
-        (analysisMode !== ANALYSIS_MODES.SCHEMA || schemaModeAvailable) && (
-          <>
-            <div className="chart-area">
-              {chartType === "line" ? (
-                <Line ref={chartRef} data={data} options={options} />
-              ) : (
-                <Bar ref={chartRef} data={data} options={options} />
-              )}
-            </div>
-            <div style={{ marginTop: "1rem", textAlign: "right" }}>
-              <button className="btn-download" onClick={handleDownload}>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  fill="currentColor"
-                  viewBox="0 0 16 16"
-                >
-                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z" />
-                  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z" />
-                </svg>
-                Download PNG
-              </button>
-            </div>
-          </>
-        )}
+        </>
+      )}
     </div>
   );
-}
+});
+
+export default ReasonTrendsChart;
