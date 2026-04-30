@@ -68,9 +68,13 @@ import argparse
 import ast
 import csv
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+import pandas as pd
+import numpy as np
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
@@ -369,19 +373,19 @@ def _format_x(x: float, _pos) -> str:
     return str(int(x))
 
 
-def _annotate_small_segment(ax, x_center: float, y: float, label: str, direction: int = -1):
+def _annotate_small_segment(ax, x_center: float, y: float, label: str, direction: float = -1, x_offset: float = 0):
     """
     Draw an arrow + label for a bar segment that is too narrow to hold inline text.
-    direction: -1 = label below bar, +1 = label above bar.
+    direction: positive = point toward increasing Y, negative = point toward decreasing Y.
     """
-    offset = direction * 0.38
+    offset = direction * 0.42
     ax.annotate(
         label,
         xy=(x_center, y),
-        xytext=(x_center, y + offset),
-        ha='center', va='bottom' if direction < 0 else 'top',
+        xytext=(x_center + x_offset, y + offset),
+        ha='center', va='center',
         fontsize=8,
-        arrowprops=dict(facecolor='black', arrowstyle='->', lw=0.7),
+        arrowprops=dict(facecolor='black', arrowstyle='->', lw=0.6, alpha=0.7),
     )
 
 
@@ -436,7 +440,7 @@ def plot_gpp_field_by_section(
     fig, ax = plt.subplots(figsize=(12, fig_height))
 
     bar_height = 0.6
-    small_threshold = 0.04   # segments < 4 % of bar get arrow annotation
+    small_threshold = 0.02   # Lowered to fit 18+ sites inside
 
     for row_idx, state in enumerate(ordered):
         state_counts = counts_by_section[state]
@@ -452,16 +456,19 @@ def plot_gpp_field_by_section(
                     color=color, edgecolor='white', linewidth=0.5)
 
             fraction = val / total if total else 0
+            x_center = left + val / 2
             if fraction >= small_threshold:
                 ax.text(
-                    left + val / 2, row_idx, str(val),
+                    x_center, row_idx, str(val),
                     ha='center', va='center',
                     fontsize=9,
                     fontweight='bold' if val > 50 else 'normal',
                 )
             else:
-                _annotate_small_segment(ax, left + val / 2, row_idx, str(val),
-                                        direction=1 if row_idx == 0 else -1)
+                # Point inward for the top/bottom bars if needed
+                direction = 0.42 if row_idx == 0 else -0.42 if row_idx == len(ordered)-1 else -0.42
+                _annotate_small_segment(ax, x_center, row_idx, str(val),
+                                        direction=direction)
 
             left += val
 
@@ -652,9 +659,9 @@ def plot_aggregated(
         ('After\nGPC',  STATUS_ORDER,         after_counts),
     ]
 
-    fig, ax = plt.subplots(figsize=(12, 3.5))
+    fig, ax = plt.subplots(figsize=(12, 4.0))
     bar_height = 0.6
-    small_threshold = 0.04
+    small_threshold = 0.02
 
     for row_idx, (label, s_order, counts) in enumerate(rows_data):
         total = sum(counts.values())
@@ -666,13 +673,15 @@ def plot_aggregated(
             ax.barh(row_idx, val, bar_height, left=left,
                     color=STATUS_COLORS[status], edgecolor='white', linewidth=0.5)
             fraction = val / total if total else 0
+            x_center = left + val / 2
             if fraction >= small_threshold:
-                ax.text(left + val / 2, row_idx, str(val),
+                ax.text(x_center, row_idx, str(val),
                         ha='center', va='center', fontsize=9,
                         fontweight='bold' if val > 50 else 'normal')
             else:
-                _annotate_small_segment(ax, left + val / 2, row_idx, str(val),
-                                        direction=1 if row_idx == 0 else -1)
+                direction = 0.42 if row_idx == 0 else -0.42
+                _annotate_small_segment(ax, x_center, row_idx, str(val),
+                                        direction=direction)
             left += val
 
     ax.set_yticks([0, 1])
@@ -761,7 +770,7 @@ def plot_before_after_by_section(
     fig, ax = plt.subplots(figsize=(12, fig_height))
 
     bar_height = 0.55
-    small_threshold = 0.04
+    small_threshold = 0.02
 
     for row_idx, item in enumerate(row_items):
         if item is None:
@@ -779,13 +788,16 @@ def plot_before_after_by_section(
                     color=STATUS_COLORS[status],
                     edgecolor='white', linewidth=0.5)
             fraction = val / total if total else 0
+            x_center = left + val / 2
             if fraction >= small_threshold:
-                ax.text(left + val / 2, row_idx, str(val),
+                ax.text(x_center, row_idx, str(val),
                         ha='center', va='center', fontsize=9,
                         fontweight='bold' if val > 50 else 'normal')
             else:
-                _annotate_small_segment(ax, left + val / 2, row_idx, str(val),
-                                        direction=1 if row_idx == 0 else -1)
+                # Point toward the gap within the pair (Before points DOWN, After points UP)
+                direction = 0.42 if row_idx % 3 == 0 else -0.42
+                _annotate_small_segment(ax, x_center, row_idx, str(val),
+                                        direction=direction)
             left += val
 
     ax.set_yticks(range(n_rows))
@@ -992,6 +1004,109 @@ def extract_legacy_counts(rows: list[dict], field: str,
     return dict(before_counts), dict(after_counts), n_sites
 
 
+def extract_before_after_by_time(
+    rows: list[dict],
+    field: str,
+    filter_subject: bool = True,
+) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]], dict[str, int], dict[str, int]]:
+    """
+    For each GPP section, return before/after status counts, plus unique-site totals
+    that match legacy mode (same error + subject filter + dedup by site_id).
+
+    Returns:
+        (before_by_section, after_by_section, before_unique, after_unique)
+
+    - before_by_section: {state_abbrev: {status: count}} from decoded_gpp_before_gpc
+    - after_by_section:  {state_abbrev: {status: count}} from compliance_classification
+    - before_unique:     {status: count} — best status per unique site across all sections
+    - after_unique:      {status: count} — best status per unique site across all sections
+    """
+    # Step 1: error filter (always)
+    filtered = [r for r in rows if _is_added(r)]
+    # Step 2: subject filter (optional)
+    if filter_subject:
+        filtered = [r for r in filtered if _is_subject_or_likely(r)]
+    # Step 3: deduplicate by site_id (first occurrence wins)
+    seen: set[str] = set()
+    deduped = []
+    for r in filtered:
+        sid = r.get('site_id', r.get('domain', ''))
+        if sid not in seen:
+            seen.add(sid)
+            deduped.append(r)
+
+    _priority = {'opted_out': 0, 'did_not_opt_out': 1, 'not_applicable': 2, 'invalid_missing': 3}
+
+    before_by_section: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    after_by_section:  dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    before_unique: dict[str, int] = defaultdict(int)
+    after_unique:  dict[str, int] = defaultdict(int)
+
+    for row in deduped:
+        # ── Before: collect all (abbrev, status) pairs from decoded_gpp_before_gpc ──
+        before_pairs: list[tuple[str, str]] = []
+        before_raw = row.get('decoded_gpp_before_gpc', '')
+        if before_raw not in ('', 'None', 'none', 'null', '{}', None):
+            try:
+                gpp_dict = ast.literal_eval(before_raw)
+            except Exception:
+                gpp_dict = None
+            if isinstance(gpp_dict, dict):
+                for section_key, abbrev in _SECTION_KEY_TO_ABBREV.items():
+                    sec = gpp_dict.get(section_key)
+                    if not isinstance(sec, dict):
+                        continue
+                    val = sec.get(field)
+                    if val is None:
+                        continue
+                    try:
+                        val = float(val)
+                    except (TypeError, ValueError):
+                        continue
+                    if val == 1.0:
+                        before_pairs.append((abbrev, 'opted_out'))
+                    elif val == 2.0:
+                        before_pairs.append((abbrev, 'did_not_opt_out'))
+                    elif val == 0.0:
+                        before_pairs.append((abbrev, 'not_applicable'))
+
+        if before_pairs:
+            abbrevs = sorted({a for a, _ in before_pairs},
+                             key=lambda x: SECTION_ORDER.index(x) if x in SECTION_ORDER else 99)
+            combo = ' & '.join(abbrevs)
+            best = min((s for _, s in before_pairs), key=lambda s: _priority.get(s, 99))
+            before_by_section[combo][best] += 1
+            before_unique[best] += 1
+
+        # ── After: collect all (state, status) pairs from compliance_classification ──
+        after_pairs: list[tuple[str, str]] = []
+        obj = parse_compliance_classification(row.get('compliance_classification', ''))
+        if obj is not None:
+            gpp = obj.get('gpp')
+            if gpp and isinstance(gpp, dict):
+                for entry in gpp.get('classifications', []):
+                    if entry.get('field') != field:
+                        continue
+                    state  = entry.get('state', 'Unknown')
+                    status = entry.get('status', 'invalid_missing')
+                    after_pairs.append((state, status))
+
+        if after_pairs:
+            abbrevs = sorted({a for a, _ in after_pairs},
+                             key=lambda x: SECTION_ORDER.index(x) if x in SECTION_ORDER else 99)
+            combo = ' & '.join(abbrevs)
+            best = min((s for _, s in after_pairs), key=lambda s: _priority.get(s, 99))
+            after_by_section[combo][best] += 1
+            after_unique[best] += 1
+
+    return (
+        {combo: dict(c) for combo, c in before_by_section.items()},
+        {combo: dict(c) for combo, c in after_by_section.items()},
+        dict(before_unique),
+        dict(after_unique),
+    )
+
+
 def plot_legacy_before_after(
     rows: list[dict],
     field: str,
@@ -1019,9 +1134,9 @@ def plot_legacy_before_after(
         ('After\nGPC',  after_counts),
     ]
 
-    fig, ax = plt.subplots(figsize=(12, 3.5))
+    fig, ax = plt.subplots(figsize=(12, 4.0))
     bar_height = 0.6
-    small_threshold = 0.04
+    small_threshold = 0.02
 
     for row_idx, (label, counts) in enumerate(rows_data):
         total = sum(counts.values())
@@ -1034,13 +1149,15 @@ def plot_legacy_before_after(
                     color=LEGACY_STATUS_COLORS[status],
                     edgecolor='white', linewidth=0.5)
             fraction = val / total if total else 0
+            x_center = left + val / 2
             if fraction >= small_threshold:
-                ax.text(left + val / 2, row_idx, str(val),
+                ax.text(x_center, row_idx, str(val),
                         ha='center', va='center', fontsize=9,
                         fontweight='bold' if val > 50 else 'normal')
             else:
-                _annotate_small_segment(ax, left + val / 2, row_idx, str(val),
-                                        direction=1 if row_idx == 0 else -1)
+                direction = 0.42 if row_idx == 0 else -0.42
+                _annotate_small_segment(ax, x_center, row_idx, str(val),
+                                        direction=direction)
             left += val
 
     ax.set_yticks([0, 1])
@@ -1064,6 +1181,662 @@ def plot_legacy_before_after(
 
     if output_path:
         fig.savefig(output_path, bbox_inches='tight', dpi=150)
+        print(f'Saved: {output_path}')
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+def _section_shade(base_hex: str, idx: int, total: int) -> str:
+    """
+    Return a progressively lighter shade of base_hex for section idx (0 = darkest/base).
+    US National (idx=0) gets the base color; state sections get lighter shades.
+    """
+    if total <= 1 or idx == 0:
+        return base_hex
+    r = int(base_hex[1:3], 16)
+    g = int(base_hex[3:5], 16)
+    b = int(base_hex[5:7], 16)
+    # Increased contrast: 42% lighter per step (was 28%)
+    blend = min(idx * 0.42, 0.85)
+    r2 = int(r + (255 - r) * blend)
+    g2 = int(g + (255 - g) * blend)
+    b2 = int(b + (255 - b) * blend)
+    return f'#{r2:02x}{g2:02x}{b2:02x}'
+
+
+def plot_before_after_by_time(
+    before_by_section: dict[str, dict[str, int]],
+    after_by_section: dict[str, dict[str, int]],
+    before_unique: dict[str, int],   # used for stdout summary; not plotted
+    after_unique: dict[str, int],    # used for n in title
+    field: str,
+    time_label: str,
+    sections_to_show: list[str] | None = None,
+    output_path: str | None = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    2-bar Before/After GPC chart where each bar is segmented by (status × section).
+
+    Each status group (Did Not Opt Out, Opted Out, etc.) is subdivided by GPP section,
+    shown as progressively lighter shades of the status color — darkest for US National,
+    lighter for each additional state section. Segment labels show the state abbreviation
+    and count so the contribution of each state is readable.
+
+    Summing all non-invalid_missing segments in the After bar gives the same totals as
+    the legacy chart (e.g. US DNOO + CO DNOO = legacy DNOO total).
+    """
+    BEFORE_STATUS_ORDER = ['not_applicable', 'did_not_opt_out', 'opted_out']
+
+    all_combos = set(before_by_section.keys()) | set(after_by_section.keys())
+
+    # Order: single-section combos first (in SECTION_ORDER), then multi-section combos
+    single = [s for s in SECTION_ORDER if s in all_combos]
+    multi  = sorted(c for c in all_combos if ' & ' in c)
+    ordered = single + multi
+
+    if sections_to_show:
+        # Keep a combo if any of its sections appear in sections_to_show
+        ordered = [c for c in ordered
+                   if any(s in sections_to_show for s in c.split(' & '))]
+
+    if not ordered:
+        print(f'[{field}] No data to plot (before-after-by-time mode).')
+        return None
+
+    n_sections = len(ordered)
+
+    # n shown in title: legacy-matching count (after, excluding invalid_missing)
+    n_after_legacy = sum(
+        cnt for sec_counts in after_by_section.values()
+        for status, cnt in sec_counts.items()
+        if status != 'invalid_missing'
+    )
+
+    fig, ax = plt.subplots(figsize=(12, 4.0))
+    bar_height   = 0.55
+    small_threshold = 0.02   # Lowered to 2% to fit ~17+ sites inside the bar
+
+    bars = [
+        (0, 'Before\nGPC', BEFORE_STATUS_ORDER, before_by_section),
+        (1, 'After\nGPC',  STATUS_ORDER,         after_by_section),
+    ]
+
+    for row_idx, y_label, s_order, by_section in bars:
+        # compute total width of this bar for fraction checks
+        total = sum(
+            cnt
+            for sec_counts in by_section.values()
+            for cnt in sec_counts.values()
+        )
+        left = 0.0
+        # Point toward the middle gap: 0 points down (0.4), 1 points up (-0.4)
+        direction_base = 0.42 if row_idx == 0 else -0.42
+        
+        last_annot_x = -1e9
+        last_annot_dir = direction_base
+
+        for status in s_order:
+            base_color = STATUS_COLORS[status]
+            sec_idx = 0
+            for combo in ordered:
+                val = by_section.get(combo, {}).get(status, 0)
+                if val == 0:
+                    continue
+                is_multi = ' & ' in combo
+                color = _section_shade(base_color, sec_idx, n_sections)
+                ax.barh(row_idx, val, bar_height, left=left,
+                        color=color, edgecolor='white', linewidth=0.4,
+                        hatch='///' if is_multi else None)
+
+                label_txt = f'{combo}\n{val}'
+                fraction = val / total if total else 0
+                x_center = left + val / 2
+                
+                if fraction >= small_threshold:
+                    ax.text(x_center, row_idx, label_txt,
+                            ha='center', va='center', fontsize=8, fontweight='bold')
+                else:
+                    this_dir = direction_base
+                    this_x_off = 0.0
+                    
+                    # If x is very close to last one, stagger the arrow length
+                    if abs(x_center - last_annot_x) < 0.04 * total:
+                        if abs(last_annot_dir) > 0.5:
+                            this_dir = direction_base
+                        else:
+                            this_dir = direction_base * 1.6
+                        
+                        if abs(x_center - last_annot_x) < 0.015 * total:
+                            this_x_off = 5.0 if x_center >= last_annot_x else -5.0
+
+                    _annotate_small_segment(ax, x_center, row_idx,
+                                            label_txt, direction=this_dir, x_offset=this_x_off)
+                    last_annot_x = x_center + this_x_off
+                    last_annot_dir = this_dir
+
+                left += val
+
+            sec_idx += 1  # increment per combo regardless of whether val > 0
+
+            # thin white separator between status groups
+            if left > 0 and left < total:
+                ax.vlines(x=left, ymin=row_idx - bar_height / 2, 
+                          ymax=row_idx + bar_height / 2,
+                          color='white', linewidth=1.5, alpha=0.9)
+
+    ax.set_yticks([0, 1])
+    ax.set_yticklabels(['Before\nGPC', 'After\nGPC'], fontsize=11)
+    ax.invert_yaxis()
+    ax.set_xlabel('Number of Sites', fontsize=11)
+    ax.xaxis.set_major_formatter(plt.FuncFormatter(_format_x))
+
+    # Status legend (shade variation explained by segment labels in the chart)
+    legend_patches = [
+        mpatches.Patch(facecolor=STATUS_COLORS[s], label=STATUS_LABELS[s])
+        for s in STATUS_ORDER
+    ]
+    ax.legend(handles=legend_patches, loc='upper center',
+              bbox_to_anchor=(0.5, 1.18), ncol=len(STATUS_ORDER),
+              frameon=False, fontsize=10)
+
+    title_time = f', {time_label}' if time_label else ''
+    ax.set_title(
+        f'{field} Before/After GPC by Section{title_time}  (n = {n_after_legacy:,})',
+        fontsize=13, fontweight='bold', pad=42,
+    )
+
+    plt.tight_layout()
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches='tight', dpi=150)
+        print(f'Saved: {output_path}')
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+# ─── Full opt-outs by mechanism (pandas, matches Colab exactly) ───────────────
+#
+# All helpers below are ported directly from processing_analysis_data.py so
+# that the numbers produced here are identical to the Google Colab output.
+
+def _cast_as_string(df: 'pd.DataFrame', columns: list[str]) -> 'pd.DataFrame':
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+    return df
+
+
+def _apply_eval(df: 'pd.DataFrame', columns: list[str]) -> 'pd.DataFrame':
+    def _safe_eval(x):
+        if not isinstance(x, str) or x in ('nan', 'None', 'none', 'null', ''):
+            return None
+        try:
+            return ast.literal_eval(x)
+        except Exception:
+            return None
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].apply(_safe_eval)
+    return df
+
+
+def _sections_table(df: 'pd.DataFrame') -> 'pd.DataFrame':
+    """Parse decoded_gpp columns into per-section opt-out strings."""
+    sections_df = df.copy()
+    possible_drop = ['uspapi_before_gpc', 'uspapi_after_gpc',
+                     'usp_cookies_before_gpc', 'usp_cookies_after_gpc',
+                     'usps_before_gpc', 'usps_after_gpc',
+                     'OptanonConsent_after_gpc', 'OptanonConsent_before_gpc',
+                     'USPS implementation']
+    sections_df = sections_df.drop(columns=[c for c in possible_drop if c in sections_df.columns])
+    sections_df = _cast_as_string(sections_df, ['decoded_gpp_before_gpc', 'decoded_gpp_after_gpc'])
+    sections_df = _apply_eval(sections_df, ['decoded_gpp_before_gpc', 'decoded_gpp_after_gpc'])
+
+    for time in ['before', 'after']:
+        col = f'decoded_gpp_{time}_gpc'
+        sections_df[f'usnatv1_{time}'] = sections_df.apply(
+            lambda r, c=col: (
+                f"{int(r[c]['usnatv1']['SaleOptOut'])},"
+                f"{int(r[c]['usnatv1']['SharingOptOut'])},"
+                f"{int(r[c]['usnatv1']['TargetedAdvertisingOptOut'])},"
+                f"{int(r[c]['usnatv1']['Gpc'])}"
+            ) if isinstance(r[c], dict) and 'usnatv1' in r[c] else None, axis=1)
+        sections_df[f'uscav1_{time}'] = sections_df.apply(
+            lambda r, c=col: (
+                f"{int(r[c]['uscav1']['SaleOptOut'])},"
+                f"{int(r[c]['uscav1']['SharingOptOut'])},"
+                f",{int(r[c]['uscav1']['Gpc'])}"
+            ) if isinstance(r[c], dict) and 'uscav1' in r[c] else None, axis=1)
+        for sect in ['uscov1', 'usctv1']:
+            sections_df[f'{sect}_{time}'] = sections_df.apply(
+                lambda r, c=col, s=sect: (
+                    f"{int(r[c][s]['SaleOptOut'])},,"
+                    f"{int(r[c][s]['TargetedAdvertisingOptOut'])},"
+                    f"{int(r[c][s]['Gpc'])}"
+                ) if isinstance(r[c], dict) and s in r[c] else None, axis=1)
+        for sect in ['usvav1', 'usutv1']:
+            sections_df[f'{sect}_{time}'] = sections_df.apply(
+                lambda r, c=col, s=sect: (
+                    f"{int(r[c][s]['SaleOptOut'])},,"
+                    f"{int(r[c][s]['TargetedAdvertisingOptOut'])},"
+                ) if isinstance(r[c], dict) and s in r[c] else None, axis=1)
+    return sections_df
+
+
+def _opt_out_usps(df: 'pd.DataFrame') -> 'pd.DataFrame':
+    return df[pd.isnull(df['usps_after_gpc']).eq(False) &
+              df['usps_after_gpc'].str.contains(r'^..[yY].$', na=False)]
+
+
+def _opt_out_OAC(df: 'pd.DataFrame') -> 'pd.DataFrame':
+    return df[pd.isnull(df['OptanonConsent_after_gpc']).eq(False) &
+              (df['OptanonConsent_after_gpc'] == 'isGpcEnabled=1')]
+
+
+def _opt_out_gpp(df_gpp: 'pd.DataFrame') -> 'pd.DataFrame':
+    df = _sections_table(df_gpp)
+    parts = [
+        df[pd.isnull(df['usnatv1_after']).eq(False) & df['usnatv1_after'].str.contains(r'^1,1,[012],[10]$', na=False)],
+        df[pd.isnull(df['uscav1_after']).eq(False)  & df['uscav1_after'].str.contains(r'^1,1,,[10]$', na=False)],
+        df[pd.isnull(df['usvav1_after']).eq(False)  & df['usvav1_after'].str.contains(r'^1,,[012],$', na=False)],
+        df[pd.isnull(df['uscov1_after']).eq(False)  & df['uscov1_after'].str.contains(r'^1,,[012],[10]$', na=False)],
+        df[pd.isnull(df['usutv1_after']).eq(False)  & df['usutv1_after'].str.contains(r'^1,,[012],$', na=False)],
+        df[pd.isnull(df['usctv1_after']).eq(False)  & df['usctv1_after'].str.contains(r'^1,,[012],[10]$', na=False)],
+    ]
+    return pd.concat(parts).drop_duplicates(subset=['Site URL'])
+
+
+_INTERSECTION_COLS = ['Site URL', 'site_id', 'status', 'domain', 'sent_gpc', 'urlClassification']
+
+
+def _intersection(fun1, fun2, df: 'pd.DataFrame') -> 'pd.DataFrame':
+    cols = [c for c in _INTERSECTION_COLS if c in df.columns]
+    return pd.merge(fun1(df), fun2(df), how='inner', on=cols)
+
+
+def _sites_with_USPS_only(df):
+    return df[
+        (pd.isnull(df['usps_before_gpc']).eq(False) | pd.isnull(df['usps_after_gpc']).eq(False))
+        & pd.isnull(df['OptanonConsent_before_gpc']) & pd.isnull(df['OptanonConsent_after_gpc'])
+        & pd.isnull(df['gpp_before_gpc']) & pd.isnull(df['gpp_after_gpc'])]
+
+
+def _sites_with_GPP_only(df):
+    return df[
+        pd.isnull(df['usps_before_gpc']) & pd.isnull(df['usps_after_gpc'])
+        & pd.isnull(df['OptanonConsent_before_gpc']) & pd.isnull(df['OptanonConsent_after_gpc'])
+        & (pd.isnull(df['gpp_before_gpc']).eq(False) | pd.isnull(df['gpp_after_gpc']).eq(False))]
+
+
+def _sites_with_USPS_and_GPP_only(df):
+    return df[
+        (pd.isnull(df['usps_before_gpc']).eq(False) | pd.isnull(df['usps_after_gpc']).eq(False))
+        & pd.isnull(df['OptanonConsent_before_gpc']) & pd.isnull(df['OptanonConsent_after_gpc'])
+        & (pd.isnull(df['gpp_before_gpc']).eq(False) | pd.isnull(df['gpp_after_gpc']).eq(False))]
+
+
+def _sites_with_OAC_only(df):
+    return df[
+        pd.isnull(df['usps_before_gpc']) & pd.isnull(df['usps_after_gpc'])
+        & (pd.isnull(df['OptanonConsent_before_gpc']).eq(False) | pd.isnull(df['OptanonConsent_after_gpc']).eq(False))
+        & pd.isnull(df['gpp_before_gpc']) & pd.isnull(df['gpp_after_gpc'])]
+
+
+def _sites_with_OAC_and_USPS_only(df):
+    return df[
+        (pd.isnull(df['usps_before_gpc']).eq(False) | pd.isnull(df['usps_after_gpc']).eq(False))
+        & (pd.isnull(df['OptanonConsent_before_gpc']).eq(False) | pd.isnull(df['OptanonConsent_after_gpc']).eq(False))
+        & pd.isnull(df['gpp_before_gpc']) & pd.isnull(df['gpp_after_gpc'])]
+
+
+def _sites_with_OAC_and_GPP_only(df):
+    return df[
+        pd.isnull(df['usps_before_gpc']) & pd.isnull(df['usps_after_gpc'])
+        & (pd.isnull(df['OptanonConsent_before_gpc']).eq(False) | pd.isnull(df['OptanonConsent_after_gpc']).eq(False))
+        & (pd.isnull(df['gpp_before_gpc']).eq(False) | pd.isnull(df['gpp_after_gpc']).eq(False))]
+
+
+def _sites_with_all3(df):
+    return df[
+        (pd.isnull(df['usps_before_gpc']).eq(False) | pd.isnull(df['usps_after_gpc']).eq(False))
+        & (pd.isnull(df['OptanonConsent_before_gpc']).eq(False) | pd.isnull(df['OptanonConsent_after_gpc']).eq(False))
+        & (pd.isnull(df['gpp_before_gpc']).eq(False) | pd.isnull(df['gpp_after_gpc']).eq(False))]
+
+
+def extract_mechanism_opt_out_counts(
+    rows: list[dict],
+    filter_subject: bool = True,
+) -> dict[str, int]:
+    """
+    Count sites with FULL opt-out per mechanism (USP String, GPP String, OptanonConsent).
+
+    Ported directly from processing_analysis_data.py to match Colab output exactly.
+    Applies the same error + subject filter as --legacy mode.
+    """
+    filtered = [r for r in rows if _is_added(r)]
+    if filter_subject:
+        filtered = [r for r in filtered if _is_subject_or_likely(r)]
+
+    df = pd.DataFrame(filtered).replace('null', np.nan)
+
+    a, b, c, d, e, f, g = (
+        _sites_with_USPS_only(df),
+        _sites_with_GPP_only(df),
+        _sites_with_USPS_and_GPP_only(df),
+        _sites_with_OAC_only(df),
+        _sites_with_OAC_and_USPS_only(df),
+        _sites_with_OAC_and_GPP_only(df),
+        _sites_with_all3(df),
+    )
+
+    a1 = _opt_out_usps(a)
+    b1 = _opt_out_gpp(b)
+    c1 = _intersection(_opt_out_usps, _opt_out_gpp, c)
+    d1 = _opt_out_OAC(d)
+    e1 = _intersection(_opt_out_usps, _opt_out_OAC, e)
+    f1 = _intersection(_opt_out_gpp, _opt_out_OAC, f)
+    g1 = _opt_out_OAC(_intersection(_opt_out_usps, _opt_out_gpp, g))
+
+    def _count_unique(dfs):
+        ids: set = set()
+        for _df in dfs:
+            col = 'site_id' if 'site_id' in _df.columns else 'Site URL'
+            ids.update(_df[col].dropna().tolist())
+        return len(ids)
+
+    return {
+        'USP String':     _count_unique([a1, c1, e1, g1]),
+        'GPP String':     _count_unique([b1, c1, f1, g1]),
+        'OptanonConsent': _count_unique([d1, e1, f1, g1]),
+    }
+
+
+# ─── GPC Sub-section chart ────────────────────────────────────────────────────
+
+def _format_labels_k(label: float) -> str:
+    """Convert axis tick values to compact labels (1050 → '1K')."""
+    if label < 1000:
+        return str(int(label))
+    elif label < 1_000_000:
+        return str(round(label, -3))[:-3] + 'K'
+    else:
+        return str(round(label, -6))[:-6] + 'M'
+
+
+def _sections_analysis(df: 'pd.DataFrame') -> 'pd.DataFrame':
+    """
+    Count per-field value occurrences across all 6 GPP sections, before and after GPC.
+    Ported from sections_analysis() in processing_analysis_data.py.
+    """
+    table = pd.DataFrame(index=['Positive Instance Counts'])
+    for field in ['Sale', 'Sharing', 'TargetedAdvertising']:
+        for val in [0, 1, 2]:
+            for time in ['Before', 'After']:
+                table[f'{field} = {val} {time}'] = [0]
+    for val in [0, 1]:
+        for time in ['Before', 'After']:
+            table[f'Gpc = {val} {time}'] = [0]
+
+    for time in ['Before', 'After']:
+        for sect in ['usnatv1', 'uscav1', 'uscov1', 'usvav1', 'usctv1', 'usutv1']:
+            col = f'{sect}_{time.lower()}'
+            if col not in df.columns:
+                continue
+            not_null = pd.isnull(df[col]).eq(False)
+            for val in [0, 1, 2]:
+                table[f'Sale = {val} {time}'] += len(
+                    df[not_null & df[col].str.contains(rf'^{val},[012]{{0,1}},[012]{{0,1}},[012]{{0,1}}$', na=False)])
+                table[f'Sharing = {val} {time}'] += len(
+                    df[not_null & df[col].str.contains(rf'^[012]{{0,1}},{val},[012]{{0,1}},[012]{{0,1}}$', na=False)])
+                table[f'TargetedAdvertising = {val} {time}'] += len(
+                    df[not_null & df[col].str.contains(rf'^[012]{{0,1}},[012]{{0,1}},{val},[012]{{0,1}}$', na=False)])
+            for val in [0, 1]:
+                table[f'Gpc = {val} {time}'] += len(
+                    df[not_null & df[col].str.contains(rf'^[012]{{0,1}},[012]{{0,1}},[012]{{0,1}},{val}$', na=False)])
+    return table
+
+
+def plot_gpc_subsection(
+    rows: list[dict],
+    time_label: str,
+    output_path: str | None = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Render the GPC Sub-section Before/After GPC chart.
+
+    Shows how many GPP section entries had Gpc=0 vs Gpc=1 before and after GPC.
+    Applies the error + subject filter, then restricts to sites with GPP data.
+    Matches plot_gpp_gpc_flag() in processing_analysis_data.py.
+    """
+    filtered = [r for r in rows if _is_added(r)]
+    filtered = [r for r in filtered if _is_subject_or_likely(r)]
+    df = pd.DataFrame(filtered).replace('null', np.nan)
+
+    # Restrict to sites with GPP data
+    df_gpp = df[pd.isnull(df['gpp_before_gpc']).eq(False) | pd.isnull(df['gpp_after_gpc']).eq(False)]
+    if len(df_gpp) == 0:
+        print('No GPP data found — skipping GPC Sub-section chart.')
+        return None
+
+    sections_df  = _sections_table(df_gpp)
+    ta           = _sections_analysis(sections_df)
+
+    gpc_0 = [ta['Gpc = 0 After']['Positive Instance Counts'],
+              ta['Gpc = 0 Before']['Positive Instance Counts']]
+    gpc_1 = [ta['Gpc = 1 After']['Positive Instance Counts'],
+              ta['Gpc = 1 Before']['Positive Instance Counts']]
+
+    colors = ['#90dcfc', '#9ee6b0']   # blue for GPC=0, green for GPC=1
+    data   = [gpc_0, gpc_1]
+    ind    = np.arange(2)
+    width  = 0.6
+
+    fig, ax = plt.subplots(figsize=(8, 2.5))
+    left = np.zeros(2)
+    for i, bar_data in enumerate(data):
+        ax.barh(ind, bar_data, width, left=left, color=colors[i])
+        left += np.array(bar_data)
+
+    data_by_bar = [[row[col] for row in data] for col in range(2)]  # [after_vals, before_vals]
+    n = max(sum(x) for x in data_by_bar)
+    ax.set_xlim(right=ax.get_xlim()[1] + n * 0.02, auto=False)
+    ax.margins(None, 0.25)
+
+    y_placement = [[0.22 + i, 0.5 + i, i] for i in range(len(data))]
+    frac = 0.08
+    for month in ind:
+        x_placement = []
+        cumulative = 0
+        for idx, val in enumerate(data_by_bar[month]):
+            if val < frac * n:
+                label_x = cumulative + 0.35 * val
+                text_x  = label_x + 0.05 * n if x_placement and label_x - x_placement[-1] < 0.05 * n else label_x
+                ax.annotate(f'{val:,}',
+                            xy=(label_x, y_placement[month][0]),
+                            xytext=(text_x, y_placement[month][1]),
+                            arrowprops=dict(facecolor='black', arrowstyle='->'),
+                            fontsize=11)
+            else:
+                center_x = cumulative + 0.5 * val
+                ax.annotate(f'{val:,}', xy=(center_x, y_placement[month][2]),
+                            ha='center', va='center', fontsize=11)
+            x_placement.append(cumulative + 0.35 * val)
+            cumulative += val
+
+    time_str = time_label.replace(' ', '') if time_label else ''
+    plt.title(f'GPC Sub-section ({time_str}, n = {n:,})', pad=30, fontsize=14)
+    ax.set_yticks(ind)
+    ax.set_yticklabels(['After\nGPC', 'Before\nGPC'], fontsize=10.5)
+    plt.xticks(np.arange(0, n + 100, 150), fontsize=10.5)
+    ax.set_xticklabels([_format_labels_k(t) for t in ax.get_xticks()])
+    fig.legend(('GPC = 0', 'GPC = 1'), ncols=3, bbox_to_anchor=(0.66, 1.03), fontsize=10.5)
+
+    plt.tight_layout()
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches='tight', dpi=100)
+        print(f'Saved: {output_path}')
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+# ─── OptanonConsent Cookie chart ──────────────────────────────────────────────
+
+def _get_oac_values(df: 'pd.DataFrame', time: str):
+    """
+    Split df into (opt_out, no_opt_out, no_gpc) for the given time ('before'/'after').
+    Mirrors get_OAC_sites_before_values() in processing_analysis_data.py.
+    """
+    col = f'OptanonConsent_{time}_gpc'
+    not_null = pd.isnull(df[col]).eq(False)
+    opt_out    = df[not_null & (df[col] == 'isGpcEnabled=1')]
+    no_opt_out = df[not_null & (df[col] == 'isGpcEnabled=0')]
+    no_gpc     = df[not_null & (df[col] == 'no_gpc')]
+    return opt_out, no_opt_out, no_gpc
+
+
+def plot_oac_opt_outs(
+    rows: list[dict],
+    time_label: str,
+    output_path: str | None = None,
+    show: bool = True,
+) -> plt.Figure:
+    """
+    Render the OptanonConsent Cookie Opt Outs Before/After GPC chart.
+
+    Applies the error filter only (no subject filter), matching the Colab call:
+        plot_barh_chart_OAC(added, colors, 'OptanonConsent Cookie Opt Outs', ...)
+    """
+    # Error filter only — no subject filter (matches Colab behaviour)
+    filtered = [r for r in rows if _is_added(r)]
+    df = pd.DataFrame(filtered).replace('null', np.nan)
+
+    opt_out_b, no_opt_out_b, no_gpc_b = _get_oac_values(df, 'before')
+    opt_out_a, no_opt_out_a, no_gpc_a = _get_oac_values(df, 'after')
+
+    # n = unique sites with any OAC value before or after
+    drop_cols = [c for c in ('decoded_gpp_before_gpc', 'decoded_gpp_after_gpc', 'unique_ad_networks')
+                 if c in df.columns]
+    n_title = len(
+        pd.concat([opt_out_a, no_opt_out_a, no_gpc_a, opt_out_b, no_opt_out_b, no_gpc_b])
+        .drop(columns=drop_cols)
+        .drop_duplicates()
+    )
+
+    # [na, not_opt_out, opt_out] indexed by [after=0, before=1]
+    na         = [len(no_gpc_a),     len(no_gpc_b)]
+    not_opt_out= [len(no_opt_out_a), len(no_opt_out_b)]
+    opt_out    = [len(opt_out_a),    len(opt_out_b)]
+
+    colors = ['#d6baca', '#90dcfc', '#9ee6b0']   # pink, blue, green
+    data   = [na, not_opt_out, opt_out]
+
+    ind   = np.arange(2)
+    width = 0.6
+    fig, ax = plt.subplots(figsize=(8, 2.5), dpi=100)
+
+    left = np.zeros(2)
+    for i, bar_data in enumerate(data):
+        ax.barh(ind, bar_data, width, left=left, color=colors[i])
+        left += np.array(bar_data)
+
+    # Annotations — arrow for small segments, inline text for large ones
+    n_max = max(sum(x) for x in [[na[i], not_opt_out[i], opt_out[i]] for i in range(2)])
+    ax.set_xlim(right=ax.get_xlim()[1] + n_max * 0.02, auto=False)
+    ax.margins(0, 0.25)
+
+    y_placement = [[0.22 + i, 0.5 + i, i] for i in range(len(data))]
+    data_by_bar = [[row[col] for row in data] for col in range(2)]  # [after_vals, before_vals]
+    frac = 0.08
+
+    for month in ind:
+        x_placement = []
+        cumulative = 0
+        for idx, val in enumerate(data_by_bar[month]):
+            if val < frac * n_max:
+                label_x = cumulative + 0.35 * val
+                text_x  = label_x + 0.05 * n_max if x_placement and label_x - x_placement[-1] < 0.05 * n_max else label_x
+                ax.annotate(
+                    f'{val:,}',
+                    xy=(label_x, y_placement[month][0]),
+                    xytext=(text_x, y_placement[month][1]),
+                    arrowprops=dict(facecolor='black', arrowstyle='->'),
+                    fontsize=11,
+                )
+                x_placement.append(text_x)
+            else:
+                center_x = cumulative + 0.5 * val
+                ax.annotate(f'{val:,}', xy=(center_x, y_placement[month][2]),
+                            ha='center', va='center', fontsize=11)
+            cumulative += val
+
+    ax.set_yticks(ind)
+    ax.set_yticklabels(['After GPC', 'Before GPC'], fontsize=11)
+    total_before = na[1] + not_opt_out[1] + opt_out[1]
+    plt.xticks(np.arange(0, total_before + 125, 250), fontsize=11)
+    ax.set_xticklabels([f'{int(t):,}' for t in ax.get_xticks()])
+    time_str = time_label.replace(' ', '') if time_label else ''
+    plt.title(f'OptanonConsent Cookie Opt Outs ({time_str}, n = {n_title:,})',
+              pad=30, fontsize=14)
+    fig.legend(('Not Applicable', 'Did Not Opt Out', 'Opted Out'),
+               ncols=3, bbox_to_anchor=(0.81, 1.03), fontsize=10.5)
+
+    plt.tight_layout()
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches='tight', dpi=100)
+        print(f'Saved: {output_path}')
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+def plot_opt_outs_by_mechanism(
+    counts: dict[str, int],
+    time_label: str,
+    output_path: str | None = None,
+    show: bool = True,
+) -> plt.Figure:
+    """Render the Full Opt-Outs by Mechanism vertical bar chart."""
+    colors = ['#D0BFF5', '#9ee6b0', '#90dcfc']  # purple, green, blue
+    mechanisms = list(counts.keys())
+    values = list(counts.values())
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    bars = ax.bar(mechanisms, values, width=0.6, color=colors[:len(mechanisms)])
+
+    for bar in bars:
+        height = bar.get_height()
+        ax.annotate(
+            f'{height:,}',
+            xy=(bar.get_x() + bar.get_width() / 2, height),
+            xytext=(0, 3),
+            textcoords='offset points',
+            ha='center', va='bottom',
+            fontsize=10,
+        )
+
+    ax.set_ylabel('# Sites with FULL opt-out', fontsize=11)
+    time_str = time_label.replace(' ', '') if time_label else ''
+    ax.set_title(f'Full Opt-Outs by Mechanism ({time_str})', fontsize=13)
+    ax.margins(x=0.05)
+    plt.tight_layout()
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches='tight', dpi=100)
         print(f'Saved: {output_path}')
 
     if show:
@@ -1163,6 +1936,16 @@ def main():
         ),
     )
     parser.add_argument(
+        '--before-after-by-time', action='store_true',
+        dest='before_after_by_time',
+        help=(
+            'Show Before GPC / After GPC groups, each containing one bar per GPP section '
+            'plus a "unique sites" bar that matches legacy totals. Applies the same '
+            'error + subject filter as --legacy. Section bars may sum to more than unique '
+            'due to cross-section overlap.'
+        ),
+    )
+    parser.add_argument(
         '--legacy', action='store_true',
         dest='legacy',
         default=False,
@@ -1178,6 +1961,31 @@ def main():
         help=(
             '(Legacy mode only) Disable the subject_or_likely_with_privacy_string '
             'filter so all rows are included.'
+        ),
+    )
+    parser.add_argument(
+        '--gpc-flag', action='store_true',
+        dest='gpc_flag',
+        help=(
+            'Generate the GPC Sub-section Before/After GPC chart showing Gpc=0 vs '
+            'Gpc=1 counts across all GPP sections. Applies error + subject filter.'
+        ),
+    )
+    parser.add_argument(
+        '--oac', action='store_true',
+        dest='oac',
+        help=(
+            'Generate the OptanonConsent Cookie Opt Outs Before/After GPC chart. '
+            'Applies the error filter only (no subject filter), matching Colab behaviour.'
+        ),
+    )
+    parser.add_argument(
+        '--opt-outs-by-mechanism', action='store_true',
+        dest='opt_outs_by_mechanism',
+        help=(
+            'Generate a "Full Opt-Outs by Mechanism" vertical bar chart showing '
+            'how many sites fully opted out via USP String, GPP String, and '
+            'OptanonConsent.  Applies the same error + subject filter as --legacy.'
         ),
     )
 
@@ -1198,8 +2006,103 @@ def main():
         rows = load_csv(path)
         print(f'  {len(rows):,} rows loaded')
 
+        # ── GPC Sub-section chart ───────────────────────────────────────────
+        if args.gpc_flag:
+            print(f'\n── GPC Sub-section ──')
+            out = None
+            if args.output:
+                p = Path(args.output)
+                out = str(p.with_name(p.stem + '_gpc_flag' + p.suffix))
+            plot_gpc_subsection(
+                rows=rows,
+                time_label=args.time,
+                output_path=out,
+                show=show,
+            )
+
+        # ── OptanonConsent Cookie chart ─────────────────────────────────────
+        if args.oac:
+            print(f'\n── OptanonConsent Cookie Opt Outs ──')
+            out = None
+            if args.output:
+                p = Path(args.output)
+                out = str(p.with_name(p.stem + '_OAC' + p.suffix))
+            plot_oac_opt_outs(
+                rows=rows,
+                time_label=args.time,
+                output_path=out,
+                show=show,
+            )
+
+        # ── Full Opt-Outs by Mechanism ──────────────────────────────────────
+        if args.opt_outs_by_mechanism:
+            filter_subject = not args.no_filter
+            print(f'\n── Full Opt-Outs by Mechanism ──')
+            counts = extract_mechanism_opt_out_counts(rows, filter_subject=filter_subject)
+            print(f'  Filter applied: {"subject_or_likely_with_privacy_string" if filter_subject else "none"}')
+            for mech, count in counts.items():
+                print(f'  {mech}: {count:,}')
+
+            out = None
+            if args.output:
+                p = Path(args.output)
+                out = str(p.with_name(p.stem + '_opt_outs_by_mechanism' + p.suffix))
+            plot_opt_outs_by_mechanism(
+                counts=counts,
+                time_label=args.time,
+                output_path=out,
+                show=show,
+            )
+
+        # ── Before/After by time mode ───────────────────────────────────────
+        elif args.before_after_by_time:
+            filter_subject = not args.no_filter
+            for field in fields:
+                print(f'\n── {field} (before-after-by-time mode) ──')
+                before_sec, after_sec, before_uniq, after_uniq = extract_before_after_by_time(
+                    rows, field, filter_subject=filter_subject,
+                )
+                print(f'  Filter: {"subject_or_likely_with_privacy_string" if filter_subject else "none"}')
+
+                multi_before = {k: v for k, v in before_sec.items() if ' & ' in k}
+                multi_after  = {k: v for k, v in after_sec.items()  if ' & ' in k}
+                n_multi_before = sum(sum(c.values()) for c in multi_before.values())
+                n_multi_after  = sum(sum(c.values()) for c in multi_after.values())
+
+                after_uniq_sum = sum(v for s, v in after_uniq.items() if s != 'invalid_missing')
+                before_uniq_sum = sum(before_uniq.values())
+                print(f'  Unique sites — before: {before_uniq_sum:,}  after (excl. invalid/missing): {after_uniq_sum:,}')
+
+                if n_multi_before or n_multi_after:
+                    print(f'  Cross-section overlap detected — shown as hatched segments:')
+                    for combo, counts in {**multi_before, **multi_after}.items():
+                        print(f'    {combo}: {sum(counts.values()):,} sites')
+                else:
+                    print(f'  No cross-section overlap — per-section sums match legacy totals.')
+
+                for state in SECTION_ORDER:
+                    if state in before_sec or state in after_sec:
+                        b = before_sec.get(state, {})
+                        a = after_sec.get(state, {})
+                        print(f'  {SECTION_DISPLAY_NAMES.get(state, state)}')
+                        print(f'    Before: { {LEGACY_STATUS_LABELS.get(s,s): b.get(s,0) for s in ["not_applicable","did_not_opt_out","opted_out"] if b.get(s,0)} }')
+                        print(f'    After:  { {STATUS_LABELS[s]: a.get(s,0) for s in STATUS_ORDER if a.get(s,0)} }')
+
+                out = build_output_path(args.output, field, 'before_after_time') if args.output else None
+                plot_before_after_by_time(
+                    before_by_section=before_sec,
+                    after_by_section=after_sec,
+                    before_unique=before_uniq,
+                    after_unique=after_uniq,
+                    field=field,
+                    time_label=args.time,
+                    sections_to_show=args.sections,
+                    output_path=out,
+                    show=show,
+                )
+
         # ── Legacy Before/After mode ────────────────────────────────────────
-        if args.legacy:
+        elif args.legacy:
             filter_subject = not args.no_filter
             for field in fields:
                 print(f'\n── {field} (legacy Before/After mode) ──')
@@ -1283,7 +2186,7 @@ def main():
                 )
 
         # ── Schema per-section mode (default) ───────────────────────────────
-        else:
+        elif not args.oac and not args.gpc_flag:
             for field in fields:
                 print(f'\n── {field} ──')
                 counts = extract_counts_by_section(rows, field)

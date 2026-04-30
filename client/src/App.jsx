@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
+import GppSectionBreakdownChart from "./components/GppSectionBreakdownChart.jsx";
 import Tooltip from "./components/Tooltip";
 import SchemaFilterPanel from "./components/SchemaFilterPanel.jsx";
 import { renderJSONCell } from "./utils/renderJSONCell";
@@ -170,7 +171,7 @@ function App() {
     getParam(["period"], "May2025")
   );
   const [selectedDataType, setSelectedDataType] = useState(() =>
-    getParam(["datatype", "type"], "all")
+    getParam(["datatype", "type"], "pnc")
   );
   const [searchQuery, setSearchQuery] = useState(() =>
     getParam(["search", "url", "domain", "site"], "")
@@ -193,6 +194,7 @@ function App() {
   const [headerFriendlyNames, setHeaderFriendlyNames] = useState({});
   const [visibleColumns, setVisibleColumns] = useState([]);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -536,6 +538,22 @@ function App() {
 
   return (
     <div className="app-container">
+      <button
+        className={`settings-toggle ${showSettings ? "settings-toggle--active" : ""}`}
+        onClick={() => setShowSettings(!showSettings)}
+        title="Settings"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          fill="currentColor"
+          viewBox="0 0 16 16"
+        >
+          <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z" />
+        </svg>
+      </button>
+
       <div className="hero">
         <h1>GPC Crawl Data</h1>
         <p className="intro">
@@ -570,27 +588,36 @@ function App() {
         </p>
       </div>
 
-      <div className="card card--padded mode-toolbar">
-        <div className="toolbar mode-toolbar__inner">
-          <label htmlFor="analysis-mode-select">Analysis Mode:</label>
-          <select
-            id="analysis-mode-select"
-            value={analysisMode}
-            onChange={(e) => setAnalysisMode(e.target.value)}
-          >
-            <option value={ANALYSIS_MODES.SCHEMA}>Schema classifications</option>
-            <option value={ANALYSIS_MODES.LEGACY}>Legacy reasons</option>
-          </select>
-          <span className="mode-toolbar__hint">
-            {analysisMode === ANALYSIS_MODES.LEGACY
-              ? "Legacy mode uses the existing Reasons_Non_Compliant CSV columns."
-              : `Schema mode uses the ${SCHEMA_CLASSIFICATION_COLUMN} column. Select "Non-compliant (schema)" to see sites with any Did Not Opt Out classification.`}
-          </span>
+      {showSettings && (
+        <div className="settings-panel">
+          <div className="card card--padded">
+            <div className="toolbar mode-toolbar__inner">
+              <label htmlFor="analysis-mode-select">Analysis Mode:</label>
+              <select
+                id="analysis-mode-select"
+                value={analysisMode}
+                onChange={(e) => setAnalysisMode(e.target.value)}
+              >
+                <option value={ANALYSIS_MODES.SCHEMA}>Schema classifications</option>
+                <option value={ANALYSIS_MODES.LEGACY}>Legacy reasons</option>
+              </select>
+              <span className="mode-toolbar__hint">
+                {analysisMode === ANALYSIS_MODES.LEGACY
+                  ? "Legacy mode uses the original Reasons_Non_Compliant columns."
+                  : "Schema mode uses a standardized classification framework."}
+              </span>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <ReasonTrendsChart
         analysisMode={analysisMode}
+        timePeriods={TIME_PERIODS}
+        stateMonths={STATE_MONTHS}
+      />
+
+      <GppSectionBreakdownChart
         timePeriods={TIME_PERIODS}
         stateMonths={STATE_MONTHS}
       />

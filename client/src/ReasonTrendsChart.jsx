@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Papa from "papaparse";
 import {
   Chart as ChartJS,
@@ -179,13 +179,29 @@ function parseCsv(publicCsvPath) {
   });
 }
 
+function getChartParam(key, fallback) {
+  if (typeof window === "undefined") return fallback;
+  return new URLSearchParams(window.location.search).get(key) ?? fallback;
+}
+
+function getChartArrayParam(key, fallback) {
+  if (typeof window === "undefined") return fallback;
+  const val = new URLSearchParams(window.location.search).get(key);
+  if (val) return val.split(",").map((s) => s.trim()).filter(Boolean);
+  return fallback;
+}
+
 export default function ReasonTrendsChart({
   analysisMode,
   timePeriods,
   stateMonths,
 }) {
-  const [selectedSeries, setSelectedSeries] = useState([]);
-  const [chartType, setChartType] = useState("line");
+  const [selectedSeries, setSelectedSeries] = useState(() =>
+    getChartArrayParam("cseries", [SPECIAL_SERIES.PNC_SITES])
+  );
+  const [chartType, setChartType] = useState(() =>
+    getChartParam("ctype", "line")
+  );
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToPncRows, setStateMonthToPncRows] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
@@ -194,8 +210,67 @@ export default function ReasonTrendsChart({
   const [schemaParseErrorCount, setSchemaParseErrorCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedStates, setSelectedStates] = useState(["CA"]);
+  const [selectedStates, setSelectedStates] = useState(() =>
+    getChartArrayParam("cstates", ["CA"])
+  );
   const [reasonDescriptions, setReasonDescriptions] = useState({});
+  const chartRef = useRef(null);
+
+  // Sync chart-specific state to URL params (cseries, cstates, ctype).
+  // This effect runs before App.jsx's URL sync (child effects fire first),
+  // so App.jsx will read the already-updated URL and safely append its own params.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+
+    if (selectedSeries.length > 0) params.set("cseries", selectedSeries.join(","));
+    else params.delete("cseries");
+
+    if (
+      selectedStates.length !== 1 ||
+      selectedStates[0] !== "CA"
+    ) {
+      params.set("cstates", selectedStates.join(","));
+    } else {
+      params.delete("cstates");
+    }
+
+    if (chartType !== "line") params.set("ctype", chartType);
+    else params.delete("ctype");
+
+    const newUrl =
+      params.toString()
+        ? window.location.pathname + "?" + params.toString()
+        : window.location.pathname;
+    if (newUrl !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, "", newUrl);
+    }
+  }, [selectedSeries, selectedStates, chartType]);
+
+  function handleDownload() {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    // To ensure white background, we draw the chart canvas onto a new canvas with a white fill
+    const canvas = chart.canvas;
+    const newCanvas = document.createElement("canvas");
+    newCanvas.width = canvas.width;
+    newCanvas.height = canvas.height;
+    const ctx = newCanvas.getContext("2d");
+
+    // Fill background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+
+    // Draw the original chart
+    ctx.drawImage(canvas, 0, 0);
+
+    const url = newCanvas.toDataURL("image/png", 1);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Trend_${analysisMode}_${selectedStates.join("_")}.png`;
+    a.click();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -223,7 +298,11 @@ export default function ReasonTrendsChart({
   }, []);
 
   useEffect(() => {
-    setSelectedSeries([]);
+    setSelectedSeries((prev) => {
+      // Keep special series when switching modes, but clear the mode-specific ones
+      const specials = prev.filter(k => k === SPECIAL_SERIES.PNC_SITES || k === SPECIAL_SERIES.NULL_SITES);
+      return specials.length > 0 ? specials : [SPECIAL_SERIES.PNC_SITES];
+    });
   }, [analysisMode]);
 
   useEffect(() => {
@@ -526,6 +605,10 @@ export default function ReasonTrendsChart({
           borderColor: color,
           backgroundColor: chartType === "line" ? color : `${color}80`,
           fill: false,
+          tension: 0.3,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
         });
       });
     });
@@ -556,11 +639,36 @@ export default function ReasonTrendsChart({
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      layout: {
+        padding: {
+          top: 10,
+          bottom: 10,
+          left: 10,
+          right: 20,
+        },
+      },
       plugins: {
-        legend: { position: "bottom" },
+        legend: {
+          position: "bottom",
+          labels: {
+            boxWidth: 12,
+            boxHeight: 12,
+            usePointStyle: true,
+            pointStyle: "circle",
+            padding: 20,
+            font: { size: 12, family: "'Segoe UI', sans-serif", weight: "500" },
+            color: "#475569",
+          },
+        },
         tooltip: {
-          mode: "nearest",
-          intersect: true,
+          mode: "index",
+          intersect: false,
+          backgroundColor: "rgba(15, 23, 42, 0.9)",
+          padding: 12,
+          titleFont: { size: 14, weight: "700", family: "'Segoe UI', sans-serif" },
+          bodyFont: { size: 13, family: "'Segoe UI', sans-serif" },
+          cornerRadius: 8,
+          usePointStyle: true,
         },
         title: {
           display: true,
@@ -568,15 +676,49 @@ export default function ReasonTrendsChart({
             analysisMode === ANALYSIS_MODES.SCHEMA
               ? "Schema classification trends over months"
               : "Reason trends over months",
+          font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
+          color: "#1e293b",
+          padding: { bottom: 20 },
         },
       },
       scales: {
         y: {
-          title: { display: true, text: "Number of Sites" },
           beginAtZero: true,
+          grid: {
+            color: "rgba(0, 0, 0, 0.05)",
+            drawBorder: false,
+          },
+          border: {
+            display: false,
+          },
+          ticks: {
+            font: { size: 12, family: "'Segoe UI', sans-serif" },
+            color: "#64748b",
+          },
+          title: {
+            display: true,
+            text: "Number of Sites",
+            font: { size: 12, weight: "600", family: "'Segoe UI', sans-serif" },
+            color: "#475569",
+          },
         },
         x: {
-          title: { display: true, text: "Month" },
+          grid: {
+            display: false,
+          },
+          border: {
+            display: false,
+          },
+          ticks: {
+            font: { size: 12, family: "'Segoe UI', sans-serif" },
+            color: "#64748b",
+          },
+          title: {
+            display: true,
+            text: "Month",
+            font: { size: 12, weight: "600", family: "'Segoe UI', sans-serif" },
+            color: "#475569",
+          },
         },
       },
     }),
@@ -680,13 +822,30 @@ export default function ReasonTrendsChart({
         selectedSeries.length > 0 &&
         selectedStates.length > 0 &&
         (analysisMode !== ANALYSIS_MODES.SCHEMA || schemaModeAvailable) && (
-          <div className="chart-area">
-            {chartType === "line" ? (
-              <Line data={data} options={options} />
-            ) : (
-              <Bar data={data} options={options} />
-            )}
-          </div>
+          <>
+            <div className="chart-area">
+              {chartType === "line" ? (
+                <Line ref={chartRef} data={data} options={options} />
+              ) : (
+                <Bar ref={chartRef} data={data} options={options} />
+              )}
+            </div>
+            <div style={{ marginTop: "1rem", textAlign: "right" }}>
+              <button className="btn-download" onClick={handleDownload}>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  fill="currentColor"
+                  viewBox="0 0 16 16"
+                >
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z" />
+                  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z" />
+                </svg>
+                Download PNG
+              </button>
+            </div>
+          </>
         )}
     </div>
   );
