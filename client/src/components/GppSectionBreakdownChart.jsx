@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import Papa from "papaparse";
 import {
   Chart as ChartJS,
@@ -10,13 +10,14 @@ import {
   Tooltip as ChartTooltip,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
+import ChartDataLabels from "chartjs-plugin-datalabels";
 import {
   getSchemaClassificationForRow,
   parseSchemaToken,
   parseJsonLike,
 } from "../utils/schemaClassification.js";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Legend, ChartTooltip);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Legend, ChartTooltip, ChartDataLabels);
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -225,23 +226,6 @@ function buildAggregatedChartData(beforeCounts, afterCounts, showInvalid) {
       backgroundColor: STATUS_BASE_COLORS[status],
       borderColor: STATUS_BASE_COLORS[status],
       borderWidth: 0,
-      borderRadius: (ctx) => {
-        const { dataIndex, datasetIndex, chart } = ctx;
-        const datasets = chart.data.datasets;
-        let firstVisible = -1;
-        let lastVisible = -1;
-        for (let i = 0; i < datasets.length; i++) {
-          if (datasets[i].data[dataIndex] > 0) {
-            if (firstVisible === -1) firstVisible = i;
-            lastVisible = i;
-          }
-        }
-        if (datasetIndex === firstVisible && datasetIndex === lastVisible) return 8;
-        if (datasetIndex === firstVisible) return { topLeft: 8, bottomLeft: 8 };
-        if (datasetIndex === lastVisible) return { topRight: 8, bottomRight: 8 };
-        return 0;
-      },
-      borderSkipped: false,
     }];
   });
   return { labels: ["Before GPC", "After GPC"], datasets };
@@ -274,23 +258,6 @@ function buildSectionChartData(beforeByCombo, afterByCombo, showInvalid) {
         backgroundColor: color,
         borderColor: isMulti ? "rgba(0,0,0,0.35)" : color,
         borderWidth: isMulti ? 1 : 0,
-        borderRadius: (ctx) => {
-          const { dataIndex, datasetIndex, chart } = ctx;
-          const dsets = chart.data.datasets;
-          let firstVisible = -1;
-          let lastVisible = -1;
-          for (let i = 0; i < dsets.length; i++) {
-            if (dsets[i].data[dataIndex] > 0) {
-              if (firstVisible === -1) firstVisible = i;
-              lastVisible = i;
-            }
-          }
-          if (datasetIndex === firstVisible && datasetIndex === lastVisible) return 8;
-          if (datasetIndex === firstVisible) return { topLeft: 8, bottomLeft: 8 };
-          if (datasetIndex === lastVisible) return { topRight: 8, bottomRight: 8 };
-          return 0;
-        },
-        borderSkipped: false,
       });
     });
   }
@@ -299,13 +266,14 @@ function buildSectionChartData(beforeByCombo, afterByCombo, showInvalid) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
+const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
   const availableStates = Object.keys(stateMonths);
 
   const [selectedState, setSelectedState] = useState(availableStates[0] ?? "CA");
   const [selectedPeriod, setSelectedPeriod] = useState("");
   const [selectedField, setSelectedField] = useState("TargetedAdvertisingOptOut");
   const [showInvalid, setShowInvalid] = useState(false);
+  const [showDataLabels, setShowDataLabels] = useState(false);
   const applyFilter = true;
   const [splitBySections, setSplitBySections] = useState(false);
   const [rows, setRows] = useState([]);
@@ -366,24 +334,49 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
     [rows, selectedField, applyFilter, splitBySections]
   );
 
-  const chartData = useMemo(
-    () =>
-      splitBySections
-        ? buildSectionChartData(beforeByCombo, afterByCombo, showInvalid)
-        : buildAggregatedChartData(beforeCounts, afterCounts, showInvalid),
-    [splitBySections, beforeCounts, afterCounts, beforeByCombo, afterByCombo, showInvalid]
-  );
+  // Reset isolation when important filters change
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current._isolatedIndices = null;
+    }
+  }, [selectedField, selectedPeriod, selectedState, splitBySections, showInvalid]);
+
+  const chartData = useMemo(() => {
+    const data = splitBySections
+      ? buildSectionChartData(beforeByCombo, afterByCombo, showInvalid)
+      : buildAggregatedChartData(beforeCounts, afterCounts, showInvalid);
+
+    // Pre-calculate visibility indices to avoid complex loops during chart animation/hover
+    const visibilityMap = [{}, {}]; // for index 0 (Before) and 1 (After)
+    data.datasets.forEach((ds, dsIdx) => {
+      [0, 1].forEach((dataIdx) => {
+        if (ds.data[dataIdx] > 0) {
+          if (visibilityMap[dataIdx].first === undefined) visibilityMap[dataIdx].first = dsIdx;
+          visibilityMap[dataIdx].last = dsIdx;
+        }
+      });
+    });
+
+    data.datasets.forEach((ds, dsIdx) => {
+      ds.borderRadius = (ctx) => {
+        const { dataIndex, datasetIndex } = ctx;
+        const { first, last } = visibilityMap[dataIndex];
+        if (first === undefined) return 0;
+        if (datasetIndex === first && datasetIndex === last) return 8;
+        if (datasetIndex === first) return { topLeft: 8, bottomLeft: 8 };
+        if (datasetIndex === last) return { topRight: 8, bottomRight: 8 };
+        return 0;
+      };
+      ds.borderSkipped = false;
+    });
+
+    return data;
+  }, [splitBySections, beforeCounts, afterCounts, beforeByCombo, afterByCombo, showInvalid]);
 
   // n = after GPC unique sites, excluding invalid_missing
   const nAfter = useMemo(() => {
     const counts = splitBySections ? afterByCombo : { "all": afterCounts };
     const seenSites = new Set();
-    
-    // We want the number of unique sites that contributed to the 'after' bars 
-    // (excluding invalid_missing). Since the counts are already aggregated by combo,
-    // and we know the totals across status categories for each combo, we can sum them.
-    // However, the most accurate way to match the legacy n is to look at 
-    // unique sites in the source data that have at least one valid section.
     
     const added = rows.filter(isAdded);
     const source = applyFilter ? added.filter(isSubjectOrLikely) : added;
@@ -404,18 +397,24 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
     const chart = chartRef.current;
     if (!chart) return;
 
-    // To ensure white background, we draw the chart canvas onto a new canvas with a white fill
+    // Save current state
+    const originalDatasets = chart.data.datasets;
+    const originalLegendFilter = chart.options.plugins.legend.labels.filter;
+
+    // Filter hidden for export
+    chart.options.plugins.legend.labels.filter = (item) => !originalDatasets[item.datasetIndex].hidden;
+    chart.data.datasets = originalDatasets.filter(ds => !ds.hidden);
+    
+    chart.update("none");
+
     const canvas = chart.canvas;
     const newCanvas = document.createElement("canvas");
     newCanvas.width = canvas.width;
     newCanvas.height = canvas.height;
     const ctx = newCanvas.getContext("2d");
 
-    // Fill background
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
-
-    // Draw the original chart
     ctx.drawImage(canvas, 0, 0);
 
     const url = newCanvas.toDataURL("image/png", 1);
@@ -425,6 +424,11 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
       splitBySections ? "_by_section" : ""
     }.png`;
     a.click();
+
+    // Restore
+    chart.data.datasets = originalDatasets;
+    chart.options.plugins.legend.labels.filter = originalLegendFilter;
+    chart.update("none");
   }
 
   const availablePeriods = stateMonths[selectedState] ?? [];
@@ -445,6 +449,7 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
     indexAxis: "y",
     responsive: true,
     maintainAspectRatio: false,
+    normalized: true, // Performance boost
     layout: {
       padding: {
         top: 10,
@@ -491,9 +496,78 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
       },
     },
     plugins: {
+      datalabels: {
+        display: showDataLabels,
+        color: "#fff",
+        font: { weight: "bold", size: 11 },
+        formatter: (val) => (val > 0 ? val.toLocaleString() : ""),
+        anchor: "center",
+        align: "center",
+      },
       legend: {
         position: "top",
         align: "end",
+        onClick: (e, legendItem, legend) => {
+          const index = legendItem.datasetIndex;
+          const chart = legend.chart;
+          const total = chart.data.datasets.length;
+          
+          if (!chart._isolatedIndices) chart._isolatedIndices = new Set();
+          const isolated = chart._isolatedIndices;
+
+          if (isolated.size === 0 || isolated.size === total) {
+            isolated.clear();
+            isolated.add(index);
+            chart.data.datasets.forEach((ds, i) => {
+              ds.hidden = i !== index;
+            });
+          } else {
+            if (isolated.has(index)) {
+              isolated.delete(index);
+              chart.data.datasets[index].hidden = true;
+              if (isolated.size === 0) {
+                chart.data.datasets.forEach((ds) => {
+                  ds.hidden = false;
+                });
+              }
+            } else {
+              isolated.add(index);
+              chart.data.datasets[index].hidden = false;
+              if (isolated.size === total) {
+                isolated.clear();
+                chart.data.datasets.forEach((ds) => {
+                  ds.hidden = false;
+                });
+              }
+            }
+          }
+          chart.update();
+        },
+        onHover: (evt, item, legend) => {
+          const chart = legend.chart;
+          const index = item.datasetIndex;
+          chart.data.datasets.forEach((ds, i) => {
+            if (i === index) {
+              ds.borderWidth = 2;
+              ds.borderColor = "rgba(0,0,0,0.8)";
+            } else {
+              ds.borderWidth = 0;
+              // Add transparency to the fill color
+              if (!ds._origBackground) ds._origBackground = ds.backgroundColor;
+              ds.backgroundColor = ds._origBackground + "20"; 
+            }
+          });
+          chart.update("none");
+        },
+        onLeave: (evt, item, legend) => {
+          const chart = legend.chart;
+          chart.data.datasets.forEach((ds) => {
+            ds.borderWidth = 0;
+            if (ds._origBackground) ds.backgroundColor = ds._origBackground;
+            ds.borderColor = ds.backgroundColor;
+          });
+          chart.update("none");
+        },
         labels: {
           boxWidth: 12,
           boxHeight: 12,
@@ -540,54 +614,33 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
       <h2>GPP Compliance Before and After GPC</h2>
 
       <div className="toolbar" role="group" aria-label="GPP breakdown chart filters">
-        <label htmlFor="gs-state">State:</label>
-        <select
-          id="gs-state"
-          value={selectedState}
-          onChange={(e) => setSelectedState(e.target.value)}
-        >
-          {availableStates.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingRight: "12px", borderRight: "1px solid #e2e8f0" }}>
+          <label htmlFor="gs-state" style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>State:</label>
+          <select id="gs-state" value={selectedState} onChange={(e) => setSelectedState(e.target.value)} style={{ padding: "4px 8px" }}>
+            {availableStates.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
 
-        <label htmlFor="gs-period">Period:</label>
-        <select
-          id="gs-period"
-          value={selectedPeriod}
-          onChange={(e) => setSelectedPeriod(e.target.value)}
-        >
-          {availablePeriods.map((p) => (
-            <option key={p} value={p}>
-              {timePeriods.find((t) => t.key === p)?.label ?? p}
-            </option>
-          ))}
-        </select>
+          <label htmlFor="gs-period" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>Period:</label>
+          <select id="gs-period" value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)} style={{ padding: "4px 8px" }}>
+            {availablePeriods.map((p) => (
+              <option key={p} value={p}>
+                {timePeriods.find((t) => t.key === p)?.label ?? p}
+              </option>
+            ))}
+          </select>
 
-        <label htmlFor="gs-field">Field:</label>
-        <select
-          id="gs-field"
-          value={selectedField}
-          onChange={(e) => setSelectedField(e.target.value)}
-        >
-          {GPP_FIELDS.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
+          <label htmlFor="gs-field" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>Field:</label>
+          <select id="gs-field" value={selectedField} onChange={(e) => setSelectedField(e.target.value)} style={{ padding: "4px 8px" }}>
+            {GPP_FIELDS.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-          <input
-            type="checkbox"
-            checked={splitBySections}
-            onChange={(e) => setSplitBySections(e.target.checked)}
-          />
-          Split by section
-        </label>
-
-        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-          <input
-            type="checkbox"
-            checked={showInvalid}
-            onChange={(e) => setShowInvalid(e.target.checked)}
-          />
-          Show Invalid / Missing
-        </label>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", paddingLeft: "4px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "13px", color: "#475569", cursor: "pointer" }}>
+            <input type="checkbox" checked={splitBySections} onChange={(e) => setSplitBySections(e.target.checked)} />
+            Split by GPP type
+          </label>
+        </div>
       </div>
 
       {loading && <p>Loading…</p>}
@@ -603,27 +656,35 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
         <>
           {splitBySections && (
             <p className="muted-text" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-              Each status group is subdivided by GPP section — darker = US National, lighter = state sections.
-              {" "}Sites with multiple section strings appear as a combined segment (e.g. <em>US &amp; CO</em>).
+              Sites with multiple GPP string sections are grouped as combined segments (e.g. <em>US &amp; CO</em>).
               {" "}{applyFilter && "Subject filter applied."}
             </p>
           )}
 
           {splitBySections && multiCombos.length > 0 && (
             <p className="muted-text" style={{ marginBottom: "0.25rem" }}>
-              <strong>Multi-section overlap (darker border):</strong>{" "}
+              Multi-section detail:{" "}
               {multiCombos.map((c) => {
-                const bt = Object.values(beforeByCombo[c] ?? {}).reduce((s, v) => s + v, 0);
-                const at = Object.values(afterByCombo[c] ?? {}).reduce((s, v) => s + v, 0);
-                return (
+                const bData = beforeByCombo[c] ?? {};
+                const aData = afterByCombo[c] ?? {};
+
+                const formatEntry = (data, timing) => {
+                  return Object.entries(data)
+                    .filter(([, count]) => count > 0)
+                    .map(([status, count]) => (
+                      <span key={`${timing}-${status}`}>
+                        {count} site{count === 1 ? "" : "s"} found matching "<em>{c}</em>" ({STATUS_LABELS[status]}) {timing} GPC
+                      </span>
+                    ));
+                };
+
+                const results = [...formatEntry(bData, "before"), ...formatEntry(aData, "after")];
+                
+                return results.length > 0 ? (
                   <span key={c}>
-                    <em>{c}</em>:{" "}
-                    {[bt > 0 && `${bt} before`, at > 0 && `${at} after`]
-                      .filter(Boolean)
-                      .join(", ")}
-                    {"; "}
+                    {results.reduce((prev, curr) => [prev, ", ", curr])}.{" "}
                   </span>
-                );
+                ) : null;
               })}
             </p>
           )}
@@ -631,7 +692,24 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
           <div style={{ height: 260, marginTop: "0.75rem" }}>
             <Bar ref={chartRef} data={chartData} options={chartOptions} />
           </div>
-          <div style={{ marginTop: "0.75rem", textAlign: "right" }}>
+          <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={showInvalid}
+                onChange={(e) => setShowInvalid(e.target.checked)}
+              />
+              Show invalid
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={showDataLabels}
+                onChange={(e) => setShowDataLabels(e.target.checked)}
+              />
+              Show data labels
+            </label>
             <button className="btn-download" onClick={handleDownload}>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -650,4 +728,6 @@ export default function GppSectionBreakdownChart({ timePeriods, stateMonths }) {
       )}
     </div>
   );
-}
+});
+
+export default GppSectionBreakdownChart;
