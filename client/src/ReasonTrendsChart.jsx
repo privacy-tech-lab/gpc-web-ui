@@ -256,8 +256,8 @@ export default function ReasonTrendsChart({
 
                 const [allData, pncData, nullData] = await Promise.all([
                   parseCsv(allPath),
-                  parseCsv(pncPath),
-                  parseCsv(nullPath),
+                  parseCsv(pncPath).catch(() => null),
+                  parseCsv(nullPath).catch(() => null),
                 ]);
 
                 const hasSchemaColumn = allData.headers.includes(
@@ -278,8 +278,8 @@ export default function ReasonTrendsChart({
                 return {
                   key: monthKey,
                   allRecords,
-                  pncRows: pncData.rows,
-                  nullRows: nullData.rows,
+                  pncRows: pncData ? pncData.rows : null,
+                  nullRows: nullData ? nullData.rows : null,
                   hasSchemaColumn,
                   parseErrors,
                 };
