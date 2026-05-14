@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
-import ComplianceClassificationChart from "./components/ComplianceClassificationChart.jsx";
 import Tooltip from "./components/Tooltip";
 import SchemaFilterPanel from "./components/SchemaFilterPanel.jsx";
 import { renderJSONCell } from "./utils/renderJSONCell";
@@ -616,14 +615,6 @@ function App() {
         analysisMode={analysisMode}
         timePeriods={TIME_PERIODS}
         stateMonths={STATE_MONTHS}
-      />
-
-      <ComplianceClassificationChart
-        month={{
-          key: "August2025",
-          label: "August 2025",
-          csvPath: "/CA/Crawl_Data_CA - August2025.csv",
-        }}
       />
 
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
