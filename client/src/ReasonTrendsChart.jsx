@@ -95,7 +95,7 @@ const SPECIAL_SERIES_DESCRIPTIONS = {
   [SPECIAL_SERIES.PNC_SITES]:
     "Counts rows in the PotentiallyNonCompliantSites dataset for each month.",
   [SPECIAL_SERIES.NULL_SITES]:
-    "Counts rows in the NullSites dataset for each month.",
+    "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
 
 const PNC_REASON_LIST = [
@@ -252,12 +252,10 @@ export default function ReasonTrendsChart({
               monthKeys.map(async (monthKey) => {
                 const allPath = `/${stateCode}/Crawl_Data_${stateCode} - ${monthKey}.csv`;
                 const pncPath = `/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`;
-                const nullPath = `/${stateCode}/Crawl_Data_${stateCode} - NullSites${monthKey}.csv`;
 
-                const [allData, pncData, nullData] = await Promise.all([
+                const [allData, pncData] = await Promise.all([
                   parseCsv(allPath),
                   parseCsv(pncPath).catch(() => null),
-                  parseCsv(nullPath).catch(() => null),
                 ]);
 
                 const hasSchemaColumn = allData.headers.includes(
@@ -275,11 +273,16 @@ export default function ReasonTrendsChart({
                     )
                   : 0;
 
+                const nullRows = allData.rows.filter(
+                  (row) =>
+                    String(row?.site_isnull ?? "").trim().toUpperCase() === "TRUE"
+                );
+
                 return {
                   key: monthKey,
                   allRecords,
                   pncRows: pncData ? pncData.rows : null,
-                  nullRows: nullData ? nullData.rows : null,
+                  nullRows,
                   hasSchemaColumn,
                   parseErrors,
                 };

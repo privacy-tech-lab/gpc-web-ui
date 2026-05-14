@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
+import ComplianceClassificationChart from "./components/ComplianceClassificationChart.jsx";
 import Tooltip from "./components/Tooltip";
 import SchemaFilterPanel from "./components/SchemaFilterPanel.jsx";
 import { renderJSONCell } from "./utils/renderJSONCell";
@@ -48,7 +49,11 @@ const DATA_TYPES = [
   { key: "all", label: "All data" },
   { key: "null", label: "Null sites" },
   { key: "pnc", label: "Potentially non-compliant" },
-  { key: "schema-noncompliant", label: "Non-compliant (schema)", schemaOnly: true },
+  {
+    key: "schema-noncompliant",
+    label: "Non-compliant (schema)",
+    schemaOnly: true,
+  },
 ];
 
 const PNC_REASON_LIST = [
@@ -84,12 +89,6 @@ const STRUCTURED_COLUMNS = new Set([
 ]);
 
 function buildPath(period, type, state) {
-  if (type === "all" || type === "schema-noncompliant") {
-    return `/${state}/Crawl_Data_${state} - ${period}.csv`;
-  }
-  if (type === "null") {
-    return `/${state}/Crawl_Data_${state} - NullSites${period}.csv`;
-  }
   if (type === "pnc") {
     return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${period}.csv`;
   }
@@ -152,7 +151,11 @@ const getArrayParam = (keys, fallback) => {
   const params = new URLSearchParams(window.location.search);
   for (const k of keys) {
     const val = params.get(k);
-    if (val) return val.split(",").map((s) => s.trim()).filter(Boolean);
+    if (val)
+      return val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
   }
   return fallback;
 };
@@ -167,26 +170,26 @@ function App() {
     return isNaN(p) || p < 1 ? 1 : p;
   });
   const [selectedTimePeriod, setSelectedTimePeriod] = useState(() =>
-    getParam(["period"], "May2025")
+    getParam(["period"], "May2025"),
   );
   const [selectedDataType, setSelectedDataType] = useState(() =>
-    getParam(["datatype", "type"], "all")
+    getParam(["datatype", "type"], "all"),
   );
   const [searchQuery, setSearchQuery] = useState(() =>
-    getParam(["search", "url", "domain", "site"], "")
+    getParam(["search", "url", "domain", "site"], ""),
   );
   const hasScrolledToSearch = useRef(false);
   const [selectedState, setSelectedState] = useState(() =>
-    getParam(["state"], "CA")
+    getParam(["state"], "CA"),
   );
   const [analysisMode, setAnalysisMode] = useState(() =>
-    getParam(["mode"], ANALYSIS_MODES.SCHEMA)
+    getParam(["mode"], ANALYSIS_MODES.SCHEMA),
   );
   const [selectedReasons, setSelectedReasons] = useState(() =>
-    getArrayParam(["reasons"], [])
+    getArrayParam(["reasons"], []),
   );
   const [selectedSchemaTokens, setSelectedSchemaTokens] = useState(() =>
-    getArrayParam(["tokens", "schema"], [])
+    getArrayParam(["tokens", "schema"], []),
   );
   const [showFilters, setShowFilters] = useState(true);
   const [descriptionsOfColumns, setDescriptionsOfColumns] = useState({});
@@ -217,17 +220,23 @@ function App() {
       params.delete("site");
     }
 
-    if (analysisMode !== ANALYSIS_MODES.SCHEMA) params.set("mode", analysisMode);
+    if (analysisMode !== ANALYSIS_MODES.SCHEMA)
+      params.set("mode", analysisMode);
     else params.delete("mode");
 
-    if (selectedReasons.length > 0) params.set("reasons", selectedReasons.join(","));
+    if (selectedReasons.length > 0)
+      params.set("reasons", selectedReasons.join(","));
     else params.delete("reasons");
 
-    if (selectedSchemaTokens.length > 0) params.set("tokens", selectedSchemaTokens.join(","));
+    if (selectedSchemaTokens.length > 0)
+      params.set("tokens", selectedSchemaTokens.join(","));
     else params.delete("tokens");
 
-    const newRelativePathQuery = window.location.pathname + "?" + params.toString();
-    const finalUrl = params.toString() ? newRelativePathQuery : window.location.pathname;
+    const newRelativePathQuery =
+      window.location.pathname + "?" + params.toString();
+    const finalUrl = params.toString()
+      ? newRelativePathQuery
+      : window.location.pathname;
 
     if (finalUrl !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, "", finalUrl);
@@ -245,7 +254,7 @@ function App() {
 
   const filePath = useMemo(
     () => buildPath(selectedTimePeriod, selectedDataType, selectedState),
-    [selectedTimePeriod, selectedDataType, selectedState]
+    [selectedTimePeriod, selectedDataType, selectedState],
   );
 
   const allowedTimePeriods = useMemo(() => {
@@ -261,8 +270,8 @@ function App() {
         res.ok
           ? res.json()
           : Promise.reject(
-              new Error("Failed to load descriptions_of_columns.json")
-            )
+              new Error("Failed to load descriptions_of_columns.json"),
+            ),
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -286,8 +295,8 @@ function App() {
         res.ok
           ? res.json()
           : Promise.reject(
-              new Error("Failed to load header_friendly_names.json")
-            )
+              new Error("Failed to load header_friendly_names.json"),
+            ),
       )
       .then((data) => {
         if (!cancelled && data && typeof data === "object") {
@@ -400,12 +409,12 @@ function App() {
         row,
         schema: getSchemaClassificationForRow(row),
       })),
-    [rows]
+    [rows],
   );
 
   const schemaParseErrorCount = useMemo(
     () => rowRecords.filter((record) => record.schema.parseError).length,
-    [rowRecords]
+    [rowRecords],
   );
 
   const schemaFilterMeta = useMemo(() => {
@@ -442,6 +451,16 @@ function App() {
     if (schemaModeUnavailable) return [];
 
     let base = rowRecords;
+
+    if (selectedDataType === "null") {
+      base = base.filter(
+        ({ row }) =>
+          String(row?.site_isnull ?? "")
+            .trim()
+            .toUpperCase() === "TRUE",
+      );
+    }
+
     if (
       analysisMode === ANALYSIS_MODES.LEGACY &&
       selectedDataType === "pnc" &&
@@ -466,11 +485,13 @@ function App() {
       selectedSchemaTokens.length > 0
     ) {
       base = base.filter(({ schema }) =>
-        schema.tokens.some((token) => selectedSchemaTokens.includes(token))
+        schema.tokens.some((token) => selectedSchemaTokens.includes(token)),
       );
     }
 
-    const query = String(searchQuery || "").trim().toLowerCase();
+    const query = String(searchQuery || "")
+      .trim()
+      .toLowerCase();
     if (query.length > 0) {
       base = base.filter(({ row }) => getRowSearchValue(row).includes(query));
     }
@@ -488,7 +509,7 @@ function App() {
 
   const filteredRows = useMemo(
     () => filteredRecords.map((record) => record.row),
-    [filteredRecords]
+    [filteredRecords],
   );
 
   const totalItems = filteredRows.length;
@@ -499,7 +520,7 @@ function App() {
 
   const pageRows = useMemo(
     () => filteredRows.slice(startIndex, endIndex),
-    [filteredRows, startIndex, endIndex]
+    [filteredRows, startIndex, endIndex],
   );
 
   const visibleTableColumns =
@@ -514,8 +535,8 @@ function App() {
     try {
       const data = filteredRows.map((row) =>
         visibleTableColumns.map((header) =>
-          row && row[header] != null ? String(row[header]) : ""
-        )
+          row && row[header] != null ? String(row[header]) : "",
+        ),
       );
       const csv = Papa.unparse({ fields: visibleTableColumns, data });
       const blob = new Blob(["\ufeff", csv], {
@@ -578,7 +599,9 @@ function App() {
             value={analysisMode}
             onChange={(e) => setAnalysisMode(e.target.value)}
           >
-            <option value={ANALYSIS_MODES.SCHEMA}>Schema classifications</option>
+            <option value={ANALYSIS_MODES.SCHEMA}>
+              Schema classifications
+            </option>
             <option value={ANALYSIS_MODES.LEGACY}>Legacy reasons</option>
           </select>
           <span className="mode-toolbar__hint">
@@ -593,6 +616,14 @@ function App() {
         analysisMode={analysisMode}
         timePeriods={TIME_PERIODS}
         stateMonths={STATE_MONTHS}
+      />
+
+      <ComplianceClassificationChart
+        month={{
+          key: "August2025",
+          label: "August 2025",
+          csvPath: "/CA/Crawl_Data_CA - August2025.csv",
+        }}
       />
 
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
@@ -642,9 +673,14 @@ function App() {
             <option
               key={type.key}
               value={type.key}
-              disabled={type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA}
+              disabled={
+                type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA
+              }
             >
-              {type.label}{type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA ? " (schema mode only)" : ""}
+              {type.label}
+              {type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA
+                ? " (schema mode only)"
+                : ""}
             </option>
           ))}
         </select>
@@ -712,7 +748,7 @@ function App() {
                 onClick={() => {
                   if (visibleColumns.length <= 1) return;
                   setVisibleColumns((prev) =>
-                    prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1)
+                    prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1),
                   );
                 }}
                 disabled={visibleColumns.length <= 1}
@@ -818,7 +854,7 @@ function App() {
                         setSelectedReasons((prev) =>
                           prev.includes(reason)
                             ? prev.filter((value) => value !== reason)
-                            : [...prev, reason]
+                            : [...prev, reason],
                         );
                       }}
                     >
@@ -844,9 +880,7 @@ function App() {
         />
       )}
 
-
       {loading ? (
-
         <div id="table-wrapper" role="status" aria-live="polite">
           <div style={{ padding: 16 }}>
             <h2>Loading CSV...</h2>
@@ -952,7 +986,9 @@ function App() {
                             .join(" ") || undefined
                         }
                       >
-                        {STRUCTURED_COLUMNS.has(String(header).toLowerCase()) ? (
+                        {STRUCTURED_COLUMNS.has(
+                          String(header).toLowerCase(),
+                        ) ? (
                           <span className="cell-content">
                             {renderJSONCell(row[header])}
                           </span>
