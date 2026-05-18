@@ -12,6 +12,7 @@ import {
   isSchemaRowNonCompliant,
   sortSchemaTokens,
 } from "./utils/schemaClassification.js";
+import datasetsManifest from "./generated/datasets.json";
 
 const PAGE_SIZE = 10;
 
@@ -22,7 +23,7 @@ const TIME_PERIODS = [
   { key: "Jun2024", label: "June 2024" },
   { key: "FebMar2025", label: "Feb-Mar 2025" },
   { key: "May2025", label: "May 2025" },
-  { key: "August2025", label: "August 2025" },
+  { key: "Aug2025", label: "August 2025" },
   { key: "Jan2026", label: "January 2026" },
 ];
 
@@ -34,7 +35,7 @@ const STATE_MONTHS = {
     "Jun2024",
     "FebMar2025",
     "May2025",
-    "August2025",
+    "Aug2025",
     "Jan2026",
   ],
   CT: ["FebMar2025", "May2025", "August2025"],
@@ -42,7 +43,18 @@ const STATE_MONTHS = {
   NJ: ["August2025"],
 };
 
-const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
+const AVAILABLE_STATES = datasetsManifest.states;
+const DEFAULT_STATE = AVAILABLE_STATES.includes("CA")
+  ? "CA"
+  : (AVAILABLE_STATES[0] ?? "CA");
+const DEFAULT_PERIOD =
+  datasetsManifest.periodsByState[DEFAULT_STATE]?.at(-1)?.key ?? "";
+
+function findPeriod(state, key) {
+  return (datasetsManifest.periodsByState[state] || []).find(
+    (period) => period.key === key,
+  );
+}
 
 const DATA_TYPES = [
   { key: "all", label: "All data" },
@@ -87,11 +99,12 @@ const STRUCTURED_COLUMNS = new Set([
   SCHEMA_CLASSIFICATION_COLUMN.toLowerCase(),
 ]);
 
-function buildPath(period, type, state) {
+function buildPath(periodEntry, type, state) {
+  if (!periodEntry) return null;
   if (type === "pnc") {
-    return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${period}.csv`;
+    return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${periodEntry.key}.csv`;
   }
-  return `/${state}/Crawl_Data_${state} - ${period}.csv`;
+  return `/${state}/${periodEntry.file}`;
 }
 
 function normalizeRow(row) {
@@ -169,7 +182,7 @@ function App() {
     return isNaN(p) || p < 1 ? 1 : p;
   });
   const [selectedTimePeriod, setSelectedTimePeriod] = useState(() =>
-    getParam(["period"], "May2025"),
+    getParam(["period"], DEFAULT_PERIOD),
   );
   const [selectedDataType, setSelectedDataType] = useState(() =>
     getParam(["datatype", "type"], "all"),
@@ -179,7 +192,7 @@ function App() {
   );
   const hasScrolledToSearch = useRef(false);
   const [selectedState, setSelectedState] = useState(() =>
-    getParam(["state"], "CA"),
+    getParam(["state"], DEFAULT_STATE),
   );
   const [analysisMode, setAnalysisMode] = useState(() =>
     getParam(["mode"], ANALYSIS_MODES.SCHEMA),
@@ -203,7 +216,7 @@ function App() {
     if (currentPage !== 1) params.set("page", currentPage);
     else params.delete("page");
 
-    if (selectedState !== "CA") params.set("state", selectedState);
+    if (selectedState !== DEFAULT_STATE) params.set("state", selectedState);
     else params.delete("state");
 
     params.set("period", selectedTimePeriod);
@@ -251,15 +264,20 @@ function App() {
     selectedSchemaTokens,
   ]);
 
-  const filePath = useMemo(
-    () => buildPath(selectedTimePeriod, selectedDataType, selectedState),
-    [selectedTimePeriod, selectedDataType, selectedState],
+  const allowedTimePeriods = useMemo(
+    () => datasetsManifest.periodsByState[selectedState] || [],
+    [selectedState],
   );
 
-  const allowedTimePeriods = useMemo(() => {
-    const keys = STATE_MONTHS[selectedState] || [];
-    return TIME_PERIODS.filter((period) => keys.includes(period.key));
-  }, [selectedState]);
+  const currentPeriodEntry = useMemo(
+    () => findPeriod(selectedState, selectedTimePeriod),
+    [selectedState, selectedTimePeriod],
+  );
+
+  const filePath = useMemo(
+    () => buildPath(currentPeriodEntry, selectedDataType, selectedState),
+    [currentPeriodEntry, selectedDataType, selectedState],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -312,13 +330,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const allowedKeys = STATE_MONTHS[selectedState] || [];
-    if (!allowedKeys.includes(selectedTimePeriod)) {
-      const next =
-        allowedKeys.length > 0
-          ? allowedKeys[allowedKeys.length - 1]
-          : selectedTimePeriod;
-      setSelectedTimePeriod(next);
+    const periods = datasetsManifest.periodsByState[selectedState] || [];
+    const hasMatch = periods.some((period) => period.key === selectedTimePeriod);
+    if (!hasMatch && periods.length > 0) {
+      setSelectedTimePeriod(periods[periods.length - 1].key);
       setCurrentPage(1);
     }
   }, [selectedState, selectedTimePeriod]);
@@ -338,6 +353,12 @@ function App() {
     setRows([]);
     setSelectedReasons([]);
     setSelectedSchemaTokens([]);
+
+    if (!filePath) {
+      setError("No dataset available for the selected state and time period.");
+      setLoading(false);
+      return;
+    }
 
     Papa.parse(filePath, {
       download: true,
