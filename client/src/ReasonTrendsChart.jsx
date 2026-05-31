@@ -20,6 +20,7 @@ import {
   ANALYSIS_MODES,
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
+  isSchemaRowNonCompliant,
   sortSchemaTokens,
   parseSchemaToken,
 } from "./utils/schemaClassification.js";
@@ -68,7 +69,7 @@ const SPECIAL_SERIES = {
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
   [SPECIAL_SERIES.PNC_SITES]:
-    "Counts rows in the PotentiallyNonCompliantSites dataset for each month.",
+    "Counts sites whose compliance classification shows at least one privacy string that did not opt out after GPC. Sites with no classification (could not determine) and sites that opted out (compliant) are excluded.",
   [SPECIAL_SERIES.NULL_SITES]:
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
@@ -103,10 +104,19 @@ function normalizeRow(row) {
   return normalized;
 }
 
-function parseCsv(publicCsvPath) {
+async function parseCsv(publicCsvPath) {
+  const response = await fetch(publicCsvPath);
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${publicCsvPath}`);
+  // Vite's SPA fallback returns index.html for missing files; reject that
+  // so callers can distinguish "missing" from "actually empty CSV".
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("html")) {
+    throw new Error(`Expected CSV, got HTML for ${publicCsvPath}`);
+  }
+  const text = await response.text();
   return new Promise((resolve, reject) => {
-    Papa.parse(publicCsvPath, {
-      download: true, header: true, skipEmptyLines: true,
+    Papa.parse(text, {
+      header: true, skipEmptyLines: true,
       complete: parsed => resolve({
         headers: (parsed.meta?.fields || []).map(f => String(f).trim()),
         rows: (parsed.data || []).map(normalizeRow),
@@ -129,7 +139,7 @@ function getChartArrayParam(key, fallback) {
 }
 
 const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePeriods, stateMonths }) {
-  const [selectedSeries, setSelectedSeries] = useState(() => getChartArrayParam("cseries", [SPECIAL_SERIES.PNC_SITES]));
+  const [selectedSeries, setSelectedSeries] = useState(() => getChartArrayParam("cseries", []));
   const [chartType, setChartType] = useState(() => getChartParam("ctype", "line"));
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToPncRows, setStateMonthToPncRows] = useState({});
@@ -172,12 +182,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
     chart.setActiveElements([]);
 
     const originalDatasets = chart.data.datasets;
-    const originalLegendFilter = chart.options.plugins.legend.labels.filter;
-
-    // Filter hidden for export
-    chart.options.plugins.legend.labels.filter = (item) => !originalDatasets[item.datasetIndex].hidden;
     chart.data.datasets = originalDatasets.filter(ds => !ds.hidden);
-    
     chart.update("none");
 
     const canvas = chart.canvas;
@@ -192,9 +197,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
     a.download = `Trend_${analysisMode}_${selectedStates.join("_")}.png`;
     a.click();
 
-    // Restore
     chart.data.datasets = originalDatasets;
-    chart.options.plugins.legend.labels.filter = originalLegendFilter;
     chart.update("none");
   }
 
@@ -334,7 +337,13 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
         color = palette[idx % palette.length];
       }
       let data = unifiedMonthKeys.map(m => {
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) return stateMonthToPncRows[stateCode]?.[m]?.length;
+        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
+          // Potentially non-compliant = any privacy string with status
+          // "did_not_opt_out". Derived from the compliance classification
+          // rather than the retired PotentiallyNonCompliantSites sheet.
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => isSchemaRowNonCompliant(r.schema)).length;
+        }
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;
         if (analysisMode === ANALYSIS_MODES.SCHEMA) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
