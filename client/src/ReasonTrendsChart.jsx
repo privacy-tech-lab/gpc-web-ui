@@ -69,7 +69,7 @@ const SPECIAL_SERIES = {
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
   [SPECIAL_SERIES.PNC_SITES]:
-    "Counts sites whose compliance classification shows at least one privacy string that did not opt out after GPC. Sites with no classification (could not determine) and sites that opted out (compliant) are excluded.",
+    "Counts sites where at least one opt-out signal (USPS, OptanonConsent, or GPP) did not opt the user out after GPC. Well-known is excluded (it reflects GPC support, not opt-out behavior). Sites with no opt-out signal (could not determine) and sites that opted out (compliant) are excluded.",
   [SPECIAL_SERIES.NULL_SITES]:
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
@@ -338,9 +338,10 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
       }
       let data = unifiedMonthKeys.map(m => {
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
-          // Potentially non-compliant = any privacy string with status
-          // "did_not_opt_out". Derived from the compliance classification
-          // rather than the retired PotentiallyNonCompliantSites sheet.
+          // Potentially non-compliant = any opt-out signal (USPS,
+          // OptanonConsent, GPP) with status "did_not_opt_out". Derived from
+          // the compliance classification rather than the retired
+          // PotentiallyNonCompliantSites sheet. See isSchemaRowNonCompliant.
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => isSchemaRowNonCompliant(r.schema)).length;
         }

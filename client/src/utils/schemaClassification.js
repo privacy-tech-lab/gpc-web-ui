@@ -346,15 +346,27 @@ export function getSchemaClassificationForRow(row) {
 }
 
 /**
+ * Families that represent an actual opt-out outcome after a GPC signal.
+ * Well-known is intentionally excluded: a `/.well-known/gpc.json` file is the
+ * site *declaring* GPC support, which is a separate compliance dimension from
+ * whether the site actually honored the signal. It must not factor into the
+ * non-compliant determination.
+ */
+const OPT_OUT_FAMILIES = new Set(["usps", "optanonConsent", "gpp"]);
+
+/**
  * Returns true if the parsed schema classification result contains at least
- * one entry with status === "did_not_opt_out". A site is considered
- * non-compliant if any tracked privacy string (USPS, OptanonConsent,
- * Well-known, or any GPP state/field combination) did not opt the user out
- * after receiving a GPC signal.
+ * one opt-out signal (USPS, OptanonConsent, or any GPP state/field
+ * combination) with status === "did_not_opt_out". Well-known status is ignored
+ * here — see OPT_OUT_FAMILIES.
  */
 export function isSchemaRowNonCompliant(schemaResult) {
   return (
     Array.isArray(schemaResult?.entries) &&
-    schemaResult.entries.some((entry) => entry.status === "did_not_opt_out")
+    schemaResult.entries.some(
+      (entry) =>
+        OPT_OUT_FAMILIES.has(entry.family) &&
+        entry.status === "did_not_opt_out"
+    )
   );
 }

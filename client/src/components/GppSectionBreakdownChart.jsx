@@ -11,11 +11,7 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import ChartDataLabels from "chartjs-plugin-datalabels";
-import {
-  getSchemaClassificationForRow,
-  parseSchemaToken,
-  parseJsonLike,
-} from "../utils/schemaClassification.js";
+import { parseJsonLike } from "../utils/schemaClassification.js";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Legend, ChartTooltip, ChartDataLabels);
 
@@ -38,13 +34,6 @@ const STATUS_RENDER_ORDER = [
   "opted_out",
   "invalid_missing",
 ];
-
-const STATUS_PRIORITY = {
-  opted_out: 0,
-  did_not_opt_out: 1,
-  not_applicable: 2,
-  invalid_missing: 3,
-};
 
 const STATUS_BASE_COLORS = {
   opted_out: "#10b981",       // Emerald 500
@@ -101,25 +90,11 @@ function isSubjectOrLikely(row) {
   return String(row["Well-known"] ?? "").includes("'gpc'");
 }
 
-function sortedAbbrevs(abbrevSet) {
-  return [...abbrevSet].sort(
-    (a, b) =>
-      (SECTION_ORDER.indexOf(a) + 1 || 999) -
-      (SECTION_ORDER.indexOf(b) + 1 || 999)
-  );
-}
-
-function bestStatus(pairs) {
-  return pairs.reduce(
-    (best, [, s]) =>
-      (STATUS_PRIORITY[s] ?? 99) < (STATUS_PRIORITY[best] ?? 99) ? s : best,
-    pairs[0][1]
-  );
-}
-
-// Extract GPP section pairs for a row's before column
-function beforePairsForRow(row, field) {
-  const raw = row["decoded_gpp_before_gpc"];
+// Extract GPP section pairs from a decoded_gpp_* column.
+// Mirrors the Colab `sections_analysis` regex semantics: each (section, field)
+// numeric value is bucketed independently, with no cross-time rewrites.
+function pairsFromDecodedColumn(row, column, field) {
+  const raw = row[column];
   if (!raw || ["null", "", "None", "none"].includes(String(raw).trim())) return [];
   const gppDict = parseJsonLike(String(raw));
   if (!gppDict || typeof gppDict !== "object" || Array.isArray(gppDict)) return [];
@@ -139,22 +114,19 @@ function beforePairsForRow(row, field) {
   return pairs;
 }
 
-// Extract GPP section pairs for a row's after column (compliance_classification)
+function beforePairsForRow(row, field) {
+  return pairsFromDecodedColumn(row, "decoded_gpp_before_gpc", field);
+}
+
 function afterPairsForRow(row, field) {
-  const schemaResult = getSchemaClassificationForRow(row);
-  if (!schemaResult || schemaResult.parseError) return [];
-  const pairs = [];
-  for (const token of schemaResult.tokens ?? []) {
-    const parsed = parseSchemaToken(token);
-    if (parsed?.family === "gpp" && parsed?.field === field) {
-      pairs.push([parsed.state, parsed.status]);
-    }
-  }
-  return pairs;
+  return pairsFromDecodedColumn(row, "decoded_gpp_after_gpc", field);
 }
 
 // ── Aggregated computation (no section split) ─────────────────────────────────
-// Each site counted once — best status across all its sections.
+// Each (row × GPP section) contributes one count to its status bucket. A row
+// with sections in both usnatv1 and uscav1 contributes twice for SharingOptOut.
+// This matches the Colab analysis (processing_analysis_data.sections_analysis),
+// which iterates over all sections per row and regex-matches per field.
 
 function computeAggregated(rows, field, applyFilter) {
   const added = rows.filter(isAdded);
@@ -163,16 +135,11 @@ function computeAggregated(rows, field, applyFilter) {
   const afterCounts = {};
 
   for (const row of source) {
-    const bp = beforePairsForRow(row, field);
-    if (bp.length > 0) {
-      const best = bestStatus(bp);
-      beforeCounts[best] = (beforeCounts[best] || 0) + 1;
+    for (const [, status] of beforePairsForRow(row, field)) {
+      beforeCounts[status] = (beforeCounts[status] || 0) + 1;
     }
-
-    const ap = afterPairsForRow(row, field);
-    if (ap.length > 0) {
-      const best = bestStatus(ap);
-      afterCounts[best] = (afterCounts[best] || 0) + 1;
+    for (const [, status] of afterPairsForRow(row, field)) {
+      afterCounts[status] = (afterCounts[status] || 0) + 1;
     }
   }
 
@@ -180,7 +147,8 @@ function computeAggregated(rows, field, applyFilter) {
 }
 
 // ── Section-split computation ─────────────────────────────────────────────────
-// Sites with multiple sections get a "US & CO" combo bucket.
+// Each (row × section) counted under its own section abbrev (US, CA, CO, …).
+// No "US & CA" combo buckets — matches the per-section instance model.
 
 function computeBySection(rows, field, applyFilter) {
   const added = rows.filter(isAdded);
@@ -189,20 +157,13 @@ function computeBySection(rows, field, applyFilter) {
   const afterByCombo = {};
 
   for (const row of source) {
-    const bp = beforePairsForRow(row, field);
-    if (bp.length > 0) {
-      const combo = sortedAbbrevs(new Set(bp.map(([a]) => a))).join(" & ");
-      const best = bestStatus(bp);
-      if (!beforeByCombo[combo]) beforeByCombo[combo] = {};
-      beforeByCombo[combo][best] = (beforeByCombo[combo][best] || 0) + 1;
+    for (const [abbrev, status] of beforePairsForRow(row, field)) {
+      if (!beforeByCombo[abbrev]) beforeByCombo[abbrev] = {};
+      beforeByCombo[abbrev][status] = (beforeByCombo[abbrev][status] || 0) + 1;
     }
-
-    const ap = afterPairsForRow(row, field);
-    if (ap.length > 0) {
-      const combo = sortedAbbrevs(new Set(ap.map(([a]) => a))).join(" & ");
-      const best = bestStatus(ap);
-      if (!afterByCombo[combo]) afterByCombo[combo] = {};
-      afterByCombo[combo][best] = (afterByCombo[combo][best] || 0) + 1;
+    for (const [abbrev, status] of afterPairsForRow(row, field)) {
+      if (!afterByCombo[abbrev]) afterByCombo[abbrev] = {};
+      afterByCombo[abbrev][status] = (afterByCombo[abbrev][status] || 0) + 1;
     }
   }
 
@@ -373,25 +334,25 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
     return data;
   }, [splitBySections, beforeCounts, afterCounts, beforeByCombo, afterByCombo, showInvalid]);
 
-  // n = after GPC unique sites, excluding invalid_missing
-  const nAfter = useMemo(() => {
-    const counts = splitBySections ? afterByCombo : { "all": afterCounts };
-    const seenSites = new Set();
-    
-    const added = rows.filter(isAdded);
-    const source = applyFilter ? added.filter(isSubjectOrLikely) : added;
-    let count = 0;
-    for (const row of source) {
-      const ap = afterPairsForRow(row, selectedField);
-      if (ap.length > 0) {
-        const best = bestStatus(ap);
-        if (best !== "invalid_missing") {
-          count++;
-        }
-      }
+  // n = max(before total, after total) over (row × section) instances —
+  // matches Colab's n_title in plot_barh_chart_gpp (max of the two bars).
+  // invalid_missing is excluded so it doesn't inflate n when "Show invalid"
+  // is off (it isn't part of the visible stack in that case).
+  const chartN = useMemo(() => {
+    const sumVisible = (counts) =>
+      Object.entries(counts).reduce(
+        (acc, [status, v]) => acc + (status === "invalid_missing" && !showInvalid ? 0 : v),
+        0
+      );
+    if (splitBySections) {
+      let before = 0;
+      let after = 0;
+      for (const c of Object.values(beforeByCombo)) before += sumVisible(c);
+      for (const c of Object.values(afterByCombo)) after += sumVisible(c);
+      return Math.max(before, after);
     }
-    return count;
-  }, [rows, selectedField, applyFilter, splitBySections, afterByCombo, afterCounts]);
+    return Math.max(sumVisible(beforeCounts), sumVisible(afterCounts));
+  }, [splitBySections, beforeCounts, afterCounts, beforeByCombo, afterByCombo, showInvalid]);
 
   function handleDownload() {
     const chart = chartRef.current;
@@ -434,14 +395,11 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
   const availablePeriods = stateMonths[selectedState] ?? [];
   const periodLabel = timePeriods.find((p) => p.key === selectedPeriod)?.label ?? selectedPeriod;
 
-  // Multi-section combos (only relevant when split mode is on)
-  const multiCombos = splitBySections
-    ? [...new Set([...Object.keys(beforeByCombo), ...Object.keys(afterByCombo)])].filter(
-        (c) => c.includes(" & ")
-      )
-    : [];
+  // Per-section counting no longer produces combo buckets — kept as an empty
+  // array so the existing multi-combo paragraph collapses cleanly.
+  const multiCombos = [];
 
-  const titleLine2 = `${periodLabel}  (n = ${nAfter.toLocaleString()})${
+  const titleLine2 = `${periodLabel}  (n = ${chartN.toLocaleString()})${
     splitBySections ? " — split by section" : ""
   }`;
 
@@ -656,7 +614,8 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
         <>
           {splitBySections && (
             <p className="muted-text" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-              Sites with multiple GPP string sections are grouped as combined segments (e.g. <em>US &amp; CO</em>).
+              Each GPP string section (US, CA, CO, …) is counted independently — a site
+              with multiple sections contributes once per section.
               {" "}{applyFilter && "Subject filter applied."}
             </p>
           )}

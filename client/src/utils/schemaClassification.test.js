@@ -670,11 +670,11 @@ test("isSchemaRowNonCompliant – returns true when optanonConsent is did_not_op
   assert.equal(isSchemaRowNonCompliant(result), true);
 });
 
-test("isSchemaRowNonCompliant – returns true when wellKnown is did_not_opt_out", () => {
+test("isSchemaRowNonCompliant – ignores wellKnown (separate compliance dimension)", () => {
   const result = parseSchemaClassificationCell(
     JSON.stringify({ wellKnown: { status: "did_not_opt_out" } })
   );
-  assert.equal(isSchemaRowNonCompliant(result), true);
+  assert.equal(isSchemaRowNonCompliant(result), false);
 });
 
 test("isSchemaRowNonCompliant – returns true when any gpp classification is did_not_opt_out", () => {
