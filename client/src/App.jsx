@@ -1,8 +1,41 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, lazy, Suspense } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
-import GppSectionBreakdownChart from "./components/GppSectionBreakdownChart.jsx";
+
+const GppSectionBreakdownChart = lazy(() =>
+  import("./components/GppSectionBreakdownChart.jsx")
+);
+
+// Renders children only once the wrapper scrolls within rootMargin of the
+// viewport. Used to defer the GPP breakdown chart (its own bundle + CSV
+// parse) until the user is about to see it, so the Reason Trends chart up
+// top isn't competing with it on first paint.
+function LazyOnView({ children, fallback = null, rootMargin = "200px" }) {
+  const ref = useRef(null);
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (show || !ref.current) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setShow(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setShow(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin }
+    );
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [show, rootMargin]);
+
+  return <div ref={ref}>{show ? children : fallback}</div>;
+}
 import Tooltip from "./components/Tooltip";
 import SchemaFilterPanel from "./components/SchemaFilterPanel.jsx";
 import { renderJSONCell } from "./utils/renderJSONCell";
@@ -660,10 +693,28 @@ function App() {
         stateMonths={STATE_MONTHS}
       />
 
-      <GppSectionBreakdownChart
-        timePeriods={TIME_PERIODS}
-        stateMonths={STATE_MONTHS}
-      />
+      <LazyOnView
+        fallback={
+          <div
+            className="card card--padded section"
+            style={{ minHeight: 360 }}
+            aria-hidden="true"
+          />
+        }
+      >
+        <Suspense
+          fallback={
+            <div className="card card--padded section" style={{ minHeight: 360 }}>
+              <p className="muted-text">Loading GPP breakdown…</p>
+            </div>
+          }
+        >
+          <GppSectionBreakdownChart
+            timePeriods={TIME_PERIODS}
+            stateMonths={STATE_MONTHS}
+          />
+        </Suspense>
+      </LazyOnView>
 
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
       <div className="toolbar" role="group" aria-label="Data filters">

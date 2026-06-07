@@ -239,7 +239,9 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
   const [splitBySections, setSplitBySections] = useState(false);
   const [rows, setRows] = useState([]);
   const chartRef = useRef(null);
-  const [loading, setLoading] = useState(false);
+  // Start in loading state so the "No GPP data found" message doesn't flash
+  // during the brief window between mount and the first CSV fetch.
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
   // Default to most recent available period for the selected state
@@ -252,7 +254,10 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
 
   // Load the "all data" CSV for selected state + period
   useEffect(() => {
-    if (!selectedState || !selectedPeriod) return;
+    if (!selectedState || !selectedPeriod) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setLoadError("");
     const path = `/${selectedState}/Crawl_Data_${selectedState} - ${selectedPeriod}.csv`;
@@ -601,7 +606,37 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
         </div>
       </div>
 
-      {loading && <p>Loading…</p>}
+      {loading && (
+        <div
+          style={{
+            height: 260,
+            marginTop: "0.75rem",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.75rem",
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: "3px solid #e2e8f0",
+              borderTopColor: "#3b82f6",
+              borderRadius: "50%",
+              animation: "gpp-spin 0.8s linear infinite",
+            }}
+            aria-hidden="true"
+          />
+          <span className="muted-text" style={{ fontSize: 13 }}>
+            Loading GPP data…
+          </span>
+          <style>{`@keyframes gpp-spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
       {loadError && <p style={{ color: "red" }}>{loadError}</p>}
 
       {!loading && !loadError && !hasData && (
