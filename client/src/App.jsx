@@ -62,7 +62,6 @@ const TIME_PERIODS = [
   { key: "AugSeptOct2025", label: "Aug-Oct 2025" },
   { key: "Feb2026", label: "February 2026" },
   { key: "Apr2026", label: "April 2026" },
-  { key: "April2026", label: "April 2026" },
 ];
 
 const STATE_MONTHS = {
@@ -79,7 +78,7 @@ const STATE_MONTHS = {
   ],
   CT: ["FebMar2025", "May2025", "AugSeptOct2025", "Feb2026", "Apr2026"],
   CO: ["FebMar2025", "May2025", "AugSeptOct2025", "Jan2026", "Apr2026"],
-  NJ: ["AugSeptOct2025", "Feb2026", "April2026"],
+  NJ: ["AugSeptOct2025", "Feb2026", "Apr2026"],
 };
 
 const AVAILABLE_STATES = datasetsManifest.states;
