@@ -3,8 +3,8 @@ import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 
-const GppSectionBreakdownChart = lazy(() =>
-  import("./components/GppSectionBreakdownChart.jsx")
+const GppSectionBreakdownChart = lazy(
+  () => import("./components/GppSectionBreakdownChart.jsx"),
 );
 
 // Renders children only once the wrapper scrolls within rootMargin of the
@@ -28,7 +28,7 @@ function LazyOnView({ children, fallback = null, rootMargin = "200px" }) {
           observer.disconnect();
         }
       },
-      { rootMargin }
+      { rootMargin },
     );
     observer.observe(ref.current);
     return () => observer.disconnect();
@@ -59,6 +59,10 @@ const TIME_PERIODS = [
   { key: "May2025", label: "May 2025" },
   { key: "Aug2025", label: "August 2025" },
   { key: "Jan2026", label: "January 2026" },
+  { key: "AugSeptOct2025", label: "Aug-Oct 2025" },
+  { key: "Feb2026", label: "February 2026" },
+  { key: "Apr2026", label: "April 2026" },
+  { key: "April2026", label: "April 2026" },
 ];
 
 const STATE_MONTHS = {
@@ -71,10 +75,11 @@ const STATE_MONTHS = {
     "May2025",
     "Aug2025",
     "Jan2026",
+    "Apr2026",
   ],
-  CT: ["FebMar2025", "May2025", "August2025"],
-  CO: ["FebMar2025", "May2025"],
-  NJ: ["August2025"],
+  CT: ["FebMar2025", "May2025", "AugSeptOct2025", "Feb2026", "Apr2026"],
+  CO: ["FebMar2025", "May2025", "AugSeptOct2025", "Jan2026", "Apr2026"],
+  NJ: ["AugSeptOct2025", "Feb2026", "April2026"],
 };
 
 const AVAILABLE_STATES = datasetsManifest.states;
@@ -366,7 +371,9 @@ function App() {
 
   useEffect(() => {
     const periods = datasetsManifest.periodsByState[selectedState] || [];
-    const hasMatch = periods.some((period) => period.key === selectedTimePeriod);
+    const hasMatch = periods.some(
+      (period) => period.key === selectedTimePeriod,
+    );
     if (!hasMatch && periods.length > 0) {
       setSelectedTimePeriod(periods[periods.length - 1].key);
       setCurrentPage(1);
@@ -704,7 +711,10 @@ function App() {
       >
         <Suspense
           fallback={
-            <div className="card card--padded section" style={{ minHeight: 360 }}>
+            <div
+              className="card card--padded section"
+              style={{ minHeight: 360 }}
+            >
               <p className="muted-text">Loading GPP breakdown…</p>
             </div>
           }
