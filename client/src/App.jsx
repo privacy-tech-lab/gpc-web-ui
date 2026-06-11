@@ -58,8 +58,8 @@ const TIME_PERIODS = [
   { key: "FebMar2025", label: "Feb-Mar 2025" },
   { key: "May2025", label: "May 2025" },
   { key: "Aug2025", label: "August 2025" },
-  { key: "Jan2026", label: "January 2026" },
   { key: "AugSeptOct2025", label: "Aug-Oct 2025" },
+  { key: "Jan2026", label: "January 2026" },
   { key: "Feb2026", label: "February 2026" },
   { key: "Apr2026", label: "April 2026" },
 ];
