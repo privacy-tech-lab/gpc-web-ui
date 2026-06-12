@@ -357,6 +357,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
         data, borderColor: color, backgroundColor: chartType === "line" ? color : `${color}80`,
         fill: false, tension: 0.3, pointRadius: 4, pointHoverRadius: 6,
         borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
+        spanGaps: true,
       });
     }));
     return allDatasets;
