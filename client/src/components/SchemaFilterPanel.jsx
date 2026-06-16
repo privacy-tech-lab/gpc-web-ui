@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { parseSchemaToken, getSchemaTokenLabel } from "../utils/schemaClassification.js";
 import Tooltip from "./Tooltip.jsx";
+import { STATUS_COLOR_PALETTES } from "../utils/colorPalettes.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,9 @@ function StatusPills({ subset, selectedSet, onToggle, size }) {
           const st = statusTokens(subset, sk);
           const allOn = st.length > 0 && st.every((t) => selectedSet.has(t));
           const anyOn = st.some((t) => selectedSet.has(t));
+          const color = (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || "#666";
+          const activeBg = allOn ? `${color}22` : undefined;
+          const textColor = allOn ? "#07122b" : color;
           return (
             <button
               key={sk}
@@ -107,6 +111,11 @@ function StatusPills({ subset, selectedSet, onToggle, size }) {
                 .filter(Boolean)
                 .join(" ")}
               onClick={() => onToggle(st, allOn)}
+              style={{
+                borderColor: color,
+                color: textColor,
+                background: activeBg,
+              }}
             >
               {sl}
               {anyOn && !allOn ? " ◑" : ""}
