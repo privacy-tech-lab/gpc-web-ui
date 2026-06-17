@@ -6,11 +6,23 @@ updates:
       interval: weekly
     open-pull-requests-limit: 10
     groups:
+      # Groups for Version Updates
       ui-minor-and-patch:
         update-types:
           - minor
           - patch
       ui-major:
+        update-types:
+          - major
+
+      # Groups for Security Updates
+      ui-security-minor-and-patch:
+        applies-to: security-updates
+        update-types:
+          - minor
+          - patch
+      ui-security-major:
+        applies-to: security-updates
         update-types:
           - major
 
