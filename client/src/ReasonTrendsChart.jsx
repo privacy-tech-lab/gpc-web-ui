@@ -23,7 +23,9 @@ import {
   isSchemaRowNonCompliant,
   sortSchemaTokens,
   parseSchemaToken,
-} from "./utils/schemaClassification.js";
+} 
+from "./utils/schemaClassification.js";
+import { STATUS_COLOR_PALETTES, LEGACY_COLOR_PALETTE, SPECIAL_SERIES, getColorForSeries } from "./utils/colorPalettes.js";
 
 ChartJS.register(
   CategoryScale,
@@ -36,36 +38,6 @@ ChartJS.register(
   ChartTooltip,
   ChartDataLabels
 );
-
-// ── Semantic color palettes keyed by compliance status ────────────────────────
-const STATUS_COLOR_PALETTES = {
-  opted_out: [
-    "#10b981", "#059669", "#047857", "#16a34a", "#15803d", "#22c55e",
-  ],
-  did_not_opt_out: [
-    "#3b82f6", "#2563eb", "#1d4ed8", "#60a5fa", "#3b82f6cc", "#2563ebcc",
-  ],
-  invalid_missing: [
-    "#f59e0b", "#d97706", "#b45309", "#fbbf24", "#f59e0bcc",
-  ],
-  invalid: [
-    "#ea580c", "#c2410c", "#f97316", "#9a3412",
-  ],
-  not_applicable: [
-    "#94a3b8", "#64748b", "#475569", "#cbd5e1", "#334155",
-  ],
-};
-
-const LEGACY_COLOR_PALETTE = [
-  "#2e7d32", "#1b5e20", "#43a047", "#66bb6a", "#81c784",
-  "#26a69a", "#00796b", "#558b2f", "#689f38", "#8bc34a",
-  "#33691e", "#00acc1", "#26c6da", "#9ccc65", "#4db6ac", "#a5d6a7",
-];
-
-const SPECIAL_SERIES = {
-  PNC_SITES: "Potentially Non-Compliant Sites",
-  NULL_SITES: "Null Sites",
-};
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
   [SPECIAL_SERIES.PNC_SITES]:
@@ -322,20 +294,43 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
     return [...base, ...PNC_REASON_LIST.map(r => ({ key: r, label: r, description: reasonDescriptions[r] || "" }))];
   }, [analysisMode, reasonDescriptions, schemaSeriesMeta]);
 
+  function shadeHex(hex, percent) {
+    if (!hex || hex[0] !== "#") return hex;
+    const h = hex.replace("#", "");
+    const num = parseInt(h, 16);
+    let r = (num >> 16) & 0xff;
+    let g = (num >> 8) & 0xff;
+    let b = num & 0xff;
+    r = Math.min(255, Math.max(0, Math.round(r * (1 + percent))));
+    g = Math.min(255, Math.max(0, Math.round(g * (1 + percent))));
+    b = Math.min(255, Math.max(0, Math.round(b * (1 + percent))));
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+  }
+
   const datasets = useMemo(() => {
     if (selectedSeries.length === 0) return [];
     const allDatasets = []; const statusVarCounters = {};
     selectedStates.forEach(stateCode => selectedSeries.forEach(seriesKey => {
-      let color;
-      if (seriesKey === SPECIAL_SERIES.PNC_SITES) color = "#c2410c";
-      else if (seriesKey === SPECIAL_SERIES.NULL_SITES) color = "#94a3b8";
+      let baseColor;
+      if (seriesKey === SPECIAL_SERIES.PNC_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
+      else if (seriesKey === SPECIAL_SERIES.NULL_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
       else {
         const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
         const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
         const idx = statusVarCounters[statusKey] ?? 0;
         statusVarCounters[statusKey] = idx + 1;
-        color = palette[idx % palette.length];
+        baseColor = palette[0];
       }
+
+      let color = baseColor;
+      if (selectedSeries.length <= 2 && selectedStates.length > 1) {
+        const n = selectedStates.length;
+        const i = Math.max(0, selectedStates.indexOf(stateCode));
+        const spread = n > 1 ? (i / (n - 1)) : 0.5;
+        const percent = (spread - 0.5) * 0.6; 
+        color = shadeHex(baseColor, percent);
+      }
+
       let data = unifiedMonthKeys.map(m => {
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
           // Potentially non-compliant = any opt-out signal (USPS,
