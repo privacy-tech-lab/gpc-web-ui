@@ -694,28 +694,38 @@ function App() {
 
       <div style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "16px 0 0" }}>
         <button
-          className={`chip${activeChart === "trends" ? " chip--active" : ""}`}
+          className="chip"
           onClick={() => setActiveChart("trends")}
+          disabled={activeChart === "trends"}
+          style={{
+            opacity: activeChart === "trends" ? 0.5 : 1,
+            cursor: activeChart === "trends" ? "default" : "pointer",
+          }}
         >
           Compliance Trends
         </button>
         <button
-          className={`chip${activeChart === "gpp" ? " chip--active" : ""}`}
+          className="chip"
           onClick={() => setActiveChart("gpp")}
+          disabled={activeChart === "gpp"}
+          style={{
+            opacity: activeChart === "gpp" ? 0.5 : 1,
+            cursor: activeChart === "gpp" ? "default" : "pointer",
+          }}
         >
           GPP Breakdown
         </button>
       </div>
 
-      {activeChart === "trends" && (
+      <div style={{ display: activeChart === "trends" ? "block" : "none" }}>
         <ReasonTrendsChart
           analysisMode={analysisMode}
           timePeriods={TIME_PERIODS}
           stateMonths={STATE_MONTHS}
         />
-      )}
+      </div>
 
-      {activeChart === "gpp" && (
+      <div style={{ display: activeChart === "gpp" ? "block" : "none" }}>
         <LazyOnView
           fallback={
             <div
@@ -741,7 +751,7 @@ function App() {
             />
           </Suspense>
         </LazyOnView>
-      )}
+      </div>
 
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
       <div className="toolbar" role="group" aria-label="Data filters">
