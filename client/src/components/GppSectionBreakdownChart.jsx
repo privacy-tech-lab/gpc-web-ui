@@ -28,6 +28,23 @@ const SECTION_KEY_TO_ABBREV = {
   ustxv1: "TX", usdel1: "DE",
 };
 
+// added constant to map selected state to the relevant section keys
+const STATE_TO_SECTION_KEYS = {
+  CA: ["uscav1", "usnatv1"],
+  CO: ["uscov1", "usnatv1"],
+  CT: ["usctv1", "usnatv1"],
+  VA: ["usvav1", "usnatv1"],
+  UT: ["usutv1", "usnatv1"],
+  IA: ["usiatv1", "usnatv1"],
+  OR: ["usorv1", "usnatv1"],
+  MT: ["usmtv1", "usnatv1"],
+  NH: ["usnhv1", "usnatv1"],
+  NJ: ["usnjv1", "usnatv1"],
+  TN: ["ustnv1", "usnatv1"],
+  TX: ["ustxv1", "usnatv1"],
+  DE: ["usdel1", "usnatv1"],
+};
+
 const STATUS_RENDER_ORDER = [
   "not_applicable",
   "did_not_opt_out",
@@ -93,13 +110,20 @@ function isSubjectOrLikely(row) {
 // Extract GPP section pairs from a decoded_gpp_* column.
 // Mirrors the Colab `sections_analysis` regex semantics: each (section, field)
 // numeric value is bucketed independently, with no cross-time rewrites.
-function pairsFromDecodedColumn(row, column, field) {
+function pairsFromDecodedColumn(row, column, field, selectedState) {
   const raw = row[column];
   if (!raw || ["null", "", "None", "none"].includes(String(raw).trim())) return [];
   const gppDict = parseJsonLike(String(raw));
   if (!gppDict || typeof gppDict !== "object" || Array.isArray(gppDict)) return [];
   const pairs = [];
-  for (const [sectionKey, abbrev] of Object.entries(SECTION_KEY_TO_ABBREV)) {
+
+  // Only iterate over relevant section keys for the selected state.
+  // Fall back to all known keys if selectedState isn't mapped.
+  const keys = STATE_TO_SECTION_KEYS[selectedState] ?? Object.keys(SECTION_KEY_TO_ABBREV);
+
+  for (const sectionKey of keys) {
+    const abbrev = SECTION_KEY_TO_ABBREV[sectionKey];
+    if (!abbrev) continue;
     const sec = gppDict[sectionKey];
     if (!sec || typeof sec !== "object") continue;
     const val = parseFloat(sec[field]);
@@ -114,12 +138,12 @@ function pairsFromDecodedColumn(row, column, field) {
   return pairs;
 }
 
-function beforePairsForRow(row, field) {
-  return pairsFromDecodedColumn(row, "decoded_gpp_before_gpc", field);
+function beforePairsForRow(row, field, selectedState) {
+  return pairsFromDecodedColumn(row, "decoded_gpp_before_gpc", field, selectedState);
 }
 
-function afterPairsForRow(row, field) {
-  return pairsFromDecodedColumn(row, "decoded_gpp_after_gpc", field);
+function afterPairsForRow(row, field, selectedState) {
+  return pairsFromDecodedColumn(row, "decoded_gpp_after_gpc", field, selectedState);
 }
 
 // ── Aggregated computation (no section split) ─────────────────────────────────
@@ -128,17 +152,17 @@ function afterPairsForRow(row, field) {
 // This matches the Colab analysis (processing_analysis_data.sections_analysis),
 // which iterates over all sections per row and regex-matches per field.
 
-function computeAggregated(rows, field, applyFilter) {
+function computeAggregated(rows, field, applyFilter, selectedState) {
   const added = rows.filter(isAdded);
   const source = applyFilter ? added.filter(isSubjectOrLikely) : added;
   const beforeCounts = {};
   const afterCounts = {};
 
   for (const row of source) {
-    for (const [, status] of beforePairsForRow(row, field)) {
+    for (const [, status] of beforePairsForRow(row, field, selectedState)) {
       beforeCounts[status] = (beforeCounts[status] || 0) + 1;
     }
-    for (const [, status] of afterPairsForRow(row, field)) {
+    for (const [, status] of afterPairsForRow(row, field, selectedState)) {
       afterCounts[status] = (afterCounts[status] || 0) + 1;
     }
   }
@@ -150,18 +174,18 @@ function computeAggregated(rows, field, applyFilter) {
 // Each (row × section) counted under its own section abbrev (US, CA, CO, …).
 // No "US & CA" combo buckets — matches the per-section instance model.
 
-function computeBySection(rows, field, applyFilter) {
+function computeBySection(rows, field, applyFilter, selectedState) {
   const added = rows.filter(isAdded);
   const source = applyFilter ? added.filter(isSubjectOrLikely) : added;
   const beforeByCombo = {};
   const afterByCombo = {};
 
   for (const row of source) {
-    for (const [abbrev, status] of beforePairsForRow(row, field)) {
+    for (const [abbrev, status] of beforePairsForRow(row, field, selectedState)) {
       if (!beforeByCombo[abbrev]) beforeByCombo[abbrev] = {};
       beforeByCombo[abbrev][status] = (beforeByCombo[abbrev][status] || 0) + 1;
     }
-    for (const [abbrev, status] of afterPairsForRow(row, field)) {
+    for (const [abbrev, status] of afterPairsForRow(row, field, selectedState)) {
       if (!afterByCombo[abbrev]) afterByCombo[abbrev] = {};
       afterByCombo[abbrev][status] = (afterByCombo[abbrev][status] || 0) + 1;
     }
@@ -286,18 +310,18 @@ const GppSectionBreakdownChart = memo(function GppSectionBreakdownChart({ timePe
   const { beforeCounts, afterCounts } = useMemo(
     () =>
       !splitBySections && rows.length > 0
-        ? computeAggregated(rows, selectedField, applyFilter)
+        ? computeAggregated(rows, selectedField, applyFilter, selectedState)
         : { beforeCounts: {}, afterCounts: {} },
-    [rows, selectedField, applyFilter, splitBySections]
+    [rows, selectedField, applyFilter, splitBySections, selectedState]
   );
 
   // Section-split
   const { beforeByCombo, afterByCombo } = useMemo(
     () =>
       splitBySections && rows.length > 0
-        ? computeBySection(rows, selectedField, applyFilter)
+        ? computeBySection(rows, selectedField, applyFilter, selectedState)
         : { beforeByCombo: {}, afterByCombo: {} },
-    [rows, selectedField, applyFilter, splitBySections]
+    [rows, selectedField, applyFilter, splitBySections, selectedState]
   );
 
   // Reset isolation when important filters change
