@@ -246,7 +246,7 @@ function App() {
   const [visibleColumns, setVisibleColumns] = useState([]);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-
+  const [activeChart, setActiveChart] = useState("trends");
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -692,37 +692,56 @@ function App() {
         </div>
       )}
 
-      <ReasonTrendsChart
-        analysisMode={analysisMode}
-        timePeriods={TIME_PERIODS}
-        stateMonths={STATE_MONTHS}
-      />
+      <div style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "16px 0 0" }}>
+        <button
+          className={`chip${activeChart === "trends" ? " chip--active" : ""}`}
+          onClick={() => setActiveChart("trends")}
+        >
+          Compliance Trends
+        </button>
+        <button
+          className={`chip${activeChart === "gpp" ? " chip--active" : ""}`}
+          onClick={() => setActiveChart("gpp")}
+        >
+          GPP Breakdown
+        </button>
+      </div>
 
-      <LazyOnView
-        fallback={
-          <div
-            className="card card--padded section"
-            style={{ minHeight: 360 }}
-            aria-hidden="true"
-          />
-        }
-      >
-        <Suspense
+      {activeChart === "trends" && (
+        <ReasonTrendsChart
+          analysisMode={analysisMode}
+          timePeriods={TIME_PERIODS}
+          stateMonths={STATE_MONTHS}
+        />
+      )}
+
+      {activeChart === "gpp" && (
+        <LazyOnView
           fallback={
             <div
               className="card card--padded section"
               style={{ minHeight: 360 }}
-            >
-              <p className="muted-text">Loading GPP breakdown…</p>
-            </div>
+              aria-hidden="true"
+            />
           }
         >
-          <GppSectionBreakdownChart
-            timePeriods={TIME_PERIODS}
-            stateMonths={STATE_MONTHS}
-          />
-        </Suspense>
-      </LazyOnView>
+          <Suspense
+            fallback={
+              <div
+                className="card card--padded section"
+                style={{ minHeight: 360 }}
+              >
+                <p className="muted-text">Loading GPP breakdown…</p>
+              </div>
+            }
+          >
+            <GppSectionBreakdownChart
+              timePeriods={TIME_PERIODS}
+              stateMonths={STATE_MONTHS}
+            />
+          </Suspense>
+        </LazyOnView>
+      )}
 
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
       <div className="toolbar" role="group" aria-label="Data filters">

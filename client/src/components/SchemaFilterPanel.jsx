@@ -268,17 +268,20 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
                                   position="top"
                                 >
                                   <button
-                                    className={[
-                                      "sfp__status-pill sfp__status-pill--sm",
-                                      cls,
-                                      active ? "sfp__status-pill--on" : "",
-                                    ].join(" ")}
-                                    onClick={() =>
-                                      toggleSingleToken(token, active)
-                                    }
-                                  >
-                                    {sl}
-                                  </button>
+                                  className={[
+                                    "sfp__status-pill sfp__status-pill--sm",
+                                    cls,
+                                    active ? "sfp__status-pill--on" : "",
+                                  ].join(" ")}
+                                  onClick={() => toggleSingleToken(token, active)}
+                                  style={{
+                                    borderColor: (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
+                                    color: active ? undefined : (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
+                                    background: active ? (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined : undefined,
+                                  }}
+                                >
+                                  {sl}
+                                </button>
                                 </Tooltip>
                               );
                             })}
