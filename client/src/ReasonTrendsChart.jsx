@@ -310,6 +310,20 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
   const datasets = useMemo(() => {
     if (selectedSeries.length === 0) return [];
     const allDatasets = []; const statusVarCounters = {};
+    const colorUsageCounts = {};
+    selectedStates.forEach(s => selectedSeries.forEach(sk => {
+      let c;
+      if (sk === SPECIAL_SERIES.PNC_SITES) c = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
+      else if (sk === SPECIAL_SERIES.NULL_SITES) c = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
+      else {
+        const statusKey = parseSchemaToken(sk)?.status ?? "__legacy";
+        const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
+        c = palette[0];
+      }
+      colorUsageCounts[c] = (colorUsageCounts[c] || 0) + 1;
+    }));
+
+    const colorIndexCounters = {};
     selectedStates.forEach(stateCode => selectedSeries.forEach(seriesKey => {
       let baseColor;
       if (seriesKey === SPECIAL_SERIES.PNC_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
@@ -323,11 +337,18 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
       }
 
       let color = baseColor;
-      if (selectedSeries.length <= 2 && selectedStates.length > 1) {
+      const colorIdx = colorIndexCounters[baseColor] ?? 0;
+      colorIndexCounters[baseColor] = colorIdx + 1;
+      const colorTotal = colorUsageCounts[baseColor] ?? 1;
+      if (selectedStates.length > 1) {
         const n = selectedStates.length;
         const i = Math.max(0, selectedStates.indexOf(stateCode));
         const spread = n > 1 ? (i / (n - 1)) : 0.5;
-        const percent = (spread - 0.5) * 0.6; 
+        const percent = (spread - 0.5) * 0.6;
+        color = shadeHex(baseColor, percent);
+      } else if (colorTotal > 1) {
+        const spread = colorIdx / (colorTotal - 1);
+        const percent = (spread - 0.5) * 0.6;
         color = shadeHex(baseColor, percent);
       }
 

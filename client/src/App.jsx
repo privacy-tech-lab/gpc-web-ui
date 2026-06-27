@@ -246,7 +246,7 @@ function App() {
   const [visibleColumns, setVisibleColumns] = useState([]);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-
+  const [activeChart, setActiveChart] = useState("trends");
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -692,37 +692,66 @@ function App() {
         </div>
       )}
 
-      <ReasonTrendsChart
-        analysisMode={analysisMode}
-        timePeriods={TIME_PERIODS}
-        stateMonths={STATE_MONTHS}
-      />
+      <div style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "16px 0 0" }}>
+        <button
+          className="chip"
+          onClick={() => setActiveChart("trends")}
+          disabled={activeChart === "trends"}
+          style={{
+            opacity: activeChart === "trends" ? 0.5 : 1,
+            cursor: activeChart === "trends" ? "default" : "pointer",
+          }}
+        >
+          Compliance Trends
+        </button>
+        <button
+          className="chip"
+          onClick={() => setActiveChart("gpp")}
+          disabled={activeChart === "gpp"}
+          style={{
+            opacity: activeChart === "gpp" ? 0.5 : 1,
+            cursor: activeChart === "gpp" ? "default" : "pointer",
+          }}
+        >
+          GPP Breakdown
+        </button>
+      </div>
 
-      <LazyOnView
-        fallback={
-          <div
-            className="card card--padded section"
-            style={{ minHeight: 360 }}
-            aria-hidden="true"
-          />
-        }
-      >
-        <Suspense
+      <div style={{ display: activeChart === "trends" ? "block" : "none" }}>
+        <ReasonTrendsChart
+          analysisMode={analysisMode}
+          timePeriods={TIME_PERIODS}
+          stateMonths={STATE_MONTHS}
+        />
+      </div>
+
+      <div style={{ display: activeChart === "gpp" ? "block" : "none" }}>
+        <LazyOnView
           fallback={
             <div
               className="card card--padded section"
               style={{ minHeight: 360 }}
-            >
-              <p className="muted-text">Loading GPP breakdown…</p>
-            </div>
+              aria-hidden="true"
+            />
           }
         >
-          <GppSectionBreakdownChart
-            timePeriods={TIME_PERIODS}
-            stateMonths={STATE_MONTHS}
-          />
-        </Suspense>
-      </LazyOnView>
+          <Suspense
+            fallback={
+              <div
+                className="card card--padded section"
+                style={{ minHeight: 360 }}
+              >
+                <p className="muted-text">Loading GPP breakdown…</p>
+              </div>
+            }
+          >
+            <GppSectionBreakdownChart
+              timePeriods={TIME_PERIODS}
+              stateMonths={STATE_MONTHS}
+            />
+          </Suspense>
+        </LazyOnView>
+      </div>
 
       <h2 className="section-title">Filter GPC Web Crawler Data</h2>
       <div className="toolbar" role="group" aria-label="Data filters">
