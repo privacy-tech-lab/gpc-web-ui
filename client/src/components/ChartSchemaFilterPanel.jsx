@@ -8,21 +8,25 @@ import SchemaFilterPanel from "./SchemaFilterPanel.jsx";
  *
  * Redesigned "Chart Schema Filters" for ReasonTrendsChart.
  * Shows:
- *  - A "Quick Series" row for the special/overview chips
- *    (Potentially Non-Compliant Sites, Null Sites, Non-Compliant Sites (Schema))
- *  - In schema mode: the full hierarchical SchemaFilterPanel for token-level
- *    chart series
- *  - In legacy mode: the flat reason chip grid (unchanged from before)
+ * - A "Quick Series" row for the special/overview chips
+ * (Potentially Non-Compliant Sites, Null Sites, and Top-Level Compliance Results)
+ * - In schema mode: the full hierarchical SchemaFilterPanel for token-level
+ * chart series
+ * - In legacy mode: the flat reason chip grid (unchanged from before)
  *
  * Props:
- *  seriesOptions      – array of { key, label, description }
- *  selectedSeries     – array of active keys
- *  onToggle           – (key) => void
- *  isSchemaMode       – boolean
+ * seriesOptions      – array of { key, label, description }
+ * selectedSeries     – array of active keys
+ * onToggle           – (key) => void
+ * isSchemaMode       – boolean
  */
 
+// Added the new top-level compliance results to the special keys
 const SPECIAL_KEYS = new Set([
   "Potentially Non-Compliant Sites",
+  "Likely Does Not Honor GPC",
+  "Likely Honors GPC",
+  "Not Applicable/Invalid/Missing",
   "Null Sites",
 ]);
 
@@ -125,7 +129,12 @@ export default function ChartSchemaFilterPanel({
               
               let icon = "📊";
               let label = opt.label;
+              
+              // Custom icons and labels for special keys
               if (opt.key === "Potentially Non-Compliant Sites") { icon = "⚠️"; label = "All Potentially Non-Compliant Sites"; }
+              if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
+              if (opt.key === "Likely Honors GPC") { icon = "✅"; }
+              if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; }
               if (opt.key === "Null Sites") { icon = "∅"; label = "All Null Sites"; }
 
               return (

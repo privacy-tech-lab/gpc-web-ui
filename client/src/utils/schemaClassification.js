@@ -3,7 +3,8 @@ export const ANALYSIS_MODES = Object.freeze({
   SCHEMA: "schema",
 });
 
-export const SCHEMA_CLASSIFICATION_COLUMN = "compliance_classification";
+// Updated to the new column name
+export const SCHEMA_CLASSIFICATION_COLUMN = "complianceClassification";
 
 const FAMILY_ORDER = {
   usps: 0,
@@ -137,17 +138,44 @@ function compareEntries(a, b) {
   );
 }
 
+// Maps 1.1.0 human-readable statuses to 1.0.0 internal statuses
+function normalizeStatus(rawStatus) {
+  const statusStr = String(rawStatus || "").trim();
+  switch (statusStr) {
+    case "Opted Out":
+      return "opted_out";
+    case "Did Not Opt Out":
+      return "did_not_opt_out";
+    case "Invalid Missing":      
+    case "Invalid or Missing":
+      return "invalid_missing";
+    case "Invalid":
+      return "invalid";
+    case "Not Applicable":
+      return "not_applicable";
+    default:
+      return statusStr;
+  }
+}
+
 function collectTopLevelClassification(entries, errors, family, value) {
-  if (value == null) return;
+  // Support for 1.1.0 string "None"
+  if (value == null || value === "None") return;
 
   if (!isPlainObject(value)) {
-    errors.push(`${family} must be an object or null.`);
+    errors.push(`${family} must be an object, null, or "None".`);
     return;
   }
 
-  const status = String(value.status || "").trim();
+  // Graceful fallback allows it to parse 1.0.0 schemas using 'status' too
+  const rawStatus = value.complianceClassification !== undefined 
+    ? value.complianceClassification 
+    : value.status;
+  
+  const status = normalizeStatus(rawStatus);
+
   if (!TOP_LEVEL_ALLOWED_STATUSES[family]?.has(status)) {
-    errors.push(`${family} has unsupported status "${status}".`);
+    errors.push(`${family} has unsupported status "${rawStatus}".`);
     return;
   }
 
@@ -160,50 +188,60 @@ function collectTopLevelClassification(entries, errors, family, value) {
 }
 
 function collectGppClassification(entries, errors, value) {
-  if (value == null) return;
+  if (value == null || value === "None") return;
 
   if (!isPlainObject(value)) {
-    errors.push("gpp must be an object or null.");
+    errors.push("gpp must be an object, null, or \"None\".");
     return;
   }
 
-  const classifications = value.classifications;
+  // Handle both 1.0.0 (classifications) and 1.1.0 (complianceClassifications)
+  const classifications = value.complianceClassifications || value.classifications;
+  
   if (!Array.isArray(classifications)) {
-    errors.push("gpp.classifications must be an array.");
+    errors.push("gpp classifications array is missing or invalid.");
     return;
   }
 
   classifications.forEach((item, index) => {
     if (!isPlainObject(item)) {
-      errors.push(`gpp.classifications[${index}] must be an object.`);
+      errors.push(`gpp classification [${index}] must be an object.`);
       return;
     }
 
-    const state = String(item.state || "").trim();
+    // Handle both 1.0.0 (state) and 1.1.0 (section)
+    const state = String(item.section || item.state || "").trim();
     const field = String(item.field || "").trim();
-    const status = String(item.status || "").trim();
+    
+    // Handle both 1.0.0 (status) and 1.1.0 (complianceClassification)
+    const rawStatus = item.complianceClassification !== undefined 
+      ? item.complianceClassification 
+      : item.status;
+    const status = normalizeStatus(rawStatus);
 
     if (!state) {
-      errors.push(`gpp.classifications[${index}] is missing a state.`);
+      errors.push(`gpp classification [${index}] is missing a state/section.`);
       return;
     }
     if (!GPP_ALLOWED_FIELDS.has(field)) {
       errors.push(
-        `gpp.classifications[${index}] has unsupported field "${field}".`
+        `gpp classification [${index}] has unsupported field "${field}".`
       );
       return;
     }
     if (!GPP_ALLOWED_STATUSES.has(status)) {
       errors.push(
-        `gpp.classifications[${index}] has unsupported status "${status}".`
+        `gpp classification [${index}] has unsupported status "${rawStatus}".`
       );
       return;
     }
 
+    // We keep the internal property name as "state" so the rest of the app 
+    // (and the UI filters) don't have to change!
     entries.push(
       buildEntry({
         family: "gpp",
-        state,
+        state, 
         field,
         status,
       })
@@ -284,6 +322,7 @@ export function parseSchemaClassificationCell(rawValue) {
     tokens: [],
     labels: {},
     descriptions: {},
+    complianceResult: "Not Applicable/Invalid/Missing", // Added to default state
     parseError: null,
   };
 
@@ -294,7 +333,7 @@ export function parseSchemaClassificationCell(rawValue) {
   if (!isPlainObject(parsed)) {
     return {
       ...emptyResult,
-      parseError: "Could not parse compliance_classification as a JSON object.",
+      parseError: `Could not parse ${SCHEMA_CLASSIFICATION_COLUMN} as a JSON object.`,
     };
   }
 
@@ -306,7 +345,7 @@ export function parseSchemaClassificationCell(rawValue) {
 
   if (!hasKnownSections) {
     errors.push(
-      "compliance_classification is missing expected classification sections."
+      `${SCHEMA_CLASSIFICATION_COLUMN} is missing expected classification sections.`
     );
   }
 
@@ -331,12 +370,16 @@ export function parseSchemaClassificationCell(rawValue) {
     descriptions[entry.token] = entry.description;
   });
 
+  // Extract the new complianceResult field (falling back if missing)
+  const complianceResult = parsed.complianceResult || "Not Applicable/Invalid/Missing";
+
   return {
     parsed,
     entries,
     tokens,
     labels,
     descriptions,
+    complianceResult, // Export it here
     parseError: errors.length > 0 ? errors.join(" ") : null,
   };
 }
@@ -355,12 +398,20 @@ export function getSchemaClassificationForRow(row) {
 const OPT_OUT_FAMILIES = new Set(["usps", "optanonConsent", "gpp"]);
 
 /**
- * Returns true if the parsed schema classification result contains at least
- * one opt-out signal (USPS, OptanonConsent, or any GPP state/field
- * combination) with status === "did_not_opt_out". Well-known status is ignored
- * here — see OPT_OUT_FAMILIES.
+ * Returns true if the site's top-level complianceResult explicitly states
+ * that it likely does not honor the Global Privacy Control.
  */
 export function isSchemaRowNonCompliant(schemaResult) {
+  // 1. Check the new top-level field first (for new data)
+  if (
+    schemaResult?.complianceResult && 
+    schemaResult.complianceResult !== "Not Applicable/Invalid/Missing" &&
+    schemaResult.complianceResult !== "Unknown"
+  ) {
+    return schemaResult.complianceResult === "Likely Does Not Honor GPC";
+  }
+
+  // 2. Fallback to the legacy check (for historical data & GPP Breakdown charts)
   return (
     Array.isArray(schemaResult?.entries) &&
     schemaResult.entries.some(

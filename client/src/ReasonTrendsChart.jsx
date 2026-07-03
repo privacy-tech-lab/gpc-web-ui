@@ -39,6 +39,20 @@ ChartJS.register(
   ChartDataLabels
 );
 
+// --- New Results Constants ---
+const COMPLIANCE_SERIES = {
+  DOES_NOT_HONOR: "Likely Does Not Honor GPC",
+  HONORS: "Likely Honors GPC",
+  NA_INVALID: "Not Applicable/Invalid/Missing",
+};
+
+const COMPLIANCE_DESCRIPTIONS = {
+  [COMPLIANCE_SERIES.DOES_NOT_HONOR]: "Sites whose compliance classification explicitly states that they likely do not honor GPC.",
+  [COMPLIANCE_SERIES.HONORS]: "Sites whose compliance classification explicitly states that they likely honor GPC.",
+  [COMPLIANCE_SERIES.NA_INVALID]: "Sites where GPC compliance could not be determined or is not applicable.",
+};
+// -----------------------------
+
 const SPECIAL_SERIES_DESCRIPTIONS = {
   [SPECIAL_SERIES.PNC_SITES]:
     "Counts sites where at least one opt-out signal (USPS, OptanonConsent, or GPP) did not opt the user out after GPC. Well-known is excluded (it reflects GPC support, not opt-out behavior). Sites with no opt-out signal (could not determine) and sites that opted out (compliant) are excluded.",
@@ -79,8 +93,6 @@ function normalizeRow(row) {
 async function parseCsv(publicCsvPath) {
   const response = await fetch(publicCsvPath);
   if (!response.ok) throw new Error(`HTTP ${response.status} for ${publicCsvPath}`);
-  // Vite's SPA fallback returns index.html for missing files; reject that
-  // so callers can distinguish "missing" from "actually empty CSV".
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("html")) {
     throw new Error(`Expected CSV, got HTML for ${publicCsvPath}`);
@@ -125,7 +137,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
   const [reasonDescriptions, setReasonDescriptions] = useState({});
   const chartRef = useRef(null);
 
-  // Reset isolation when main filters change
   useEffect(() => {
     if (chartRef.current) {
       chartRef.current._isolatedIndices = null;
@@ -184,8 +195,14 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
 
   useEffect(() => {
     setSelectedSeries(prev => {
-      const specials = prev.filter(k => k === SPECIAL_SERIES.PNC_SITES || k === SPECIAL_SERIES.NULL_SITES);
-      return specials.length > 0 ? specials : [SPECIAL_SERIES.PNC_SITES];
+      // Setup the defaults based on analysis mode
+      if (analysisMode === ANALYSIS_MODES.SCHEMA) {
+        const specials = prev.filter(k => k === COMPLIANCE_SERIES.DOES_NOT_HONOR || k === COMPLIANCE_SERIES.HONORS || k === COMPLIANCE_SERIES.NA_INVALID || k === SPECIAL_SERIES.NULL_SITES);
+        return specials.length > 0 ? specials : [COMPLIANCE_SERIES.DOES_NOT_HONOR];
+      } else {
+        const specials = prev.filter(k => k === SPECIAL_SERIES.PNC_SITES || k === SPECIAL_SERIES.NULL_SITES);
+        return specials.length > 0 ? specials : [SPECIAL_SERIES.PNC_SITES];
+      }
     });
   }, [analysisMode]);
 
@@ -286,12 +303,20 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
   }, [selectedStates, stateMonthToAllRecords, unifiedMonthKeys]);
 
   const seriesOptions = useMemo(() => {
-    const base = [
+    if (analysisMode === ANALYSIS_MODES.SCHEMA) {
+      const baseSchema = [
+        { key: COMPLIANCE_SERIES.DOES_NOT_HONOR, label: COMPLIANCE_SERIES.DOES_NOT_HONOR, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.DOES_NOT_HONOR] },
+        { key: COMPLIANCE_SERIES.HONORS, label: COMPLIANCE_SERIES.HONORS, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.HONORS] },
+        { key: COMPLIANCE_SERIES.NA_INVALID, label: COMPLIANCE_SERIES.NA_INVALID, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NA_INVALID] },
+        { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
+      ];
+      return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
+    }
+    const baseLegacy = [
       { key: SPECIAL_SERIES.PNC_SITES, label: SPECIAL_SERIES.PNC_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.PNC_SITES] },
       { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
     ];
-    if (analysisMode === ANALYSIS_MODES.SCHEMA) return [...base, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
-    return [...base, ...PNC_REASON_LIST.map(r => ({ key: r, label: r, description: reasonDescriptions[r] || "" }))];
+    return [...baseLegacy, ...PNC_REASON_LIST.map(r => ({ key: r, label: r, description: reasonDescriptions[r] || "" }))];
   }, [analysisMode, reasonDescriptions, schemaSeriesMeta]);
 
   function shadeHex(hex, percent) {
@@ -314,6 +339,9 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
     selectedStates.forEach(s => selectedSeries.forEach(sk => {
       let c;
       if (sk === SPECIAL_SERIES.PNC_SITES) c = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
+      else if (sk === COMPLIANCE_SERIES.DOES_NOT_HONOR) c = "#ef4444"; // Red for Does Not Honor
+      else if (sk === COMPLIANCE_SERIES.HONORS) c = "#22c55e"; // Green for Honors
+      else if (sk === COMPLIANCE_SERIES.NA_INVALID) c = "#94a3b8"; // Slate Gray for NA/Invalid/Missing
       else if (sk === SPECIAL_SERIES.NULL_SITES) c = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
       else {
         const statusKey = parseSchemaToken(sk)?.status ?? "__legacy";
@@ -327,6 +355,9 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
     selectedStates.forEach(stateCode => selectedSeries.forEach(seriesKey => {
       let baseColor;
       if (seriesKey === SPECIAL_SERIES.PNC_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
+      else if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) baseColor = "#ef4444";
+      else if (seriesKey === COMPLIANCE_SERIES.HONORS) baseColor = "#22c55e";
+      else if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) baseColor = "#94a3b8";
       else if (seriesKey === SPECIAL_SERIES.NULL_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
       else {
         const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
@@ -353,14 +384,26 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
       }
 
       let data = unifiedMonthKeys.map(m => {
+        // Fallback for Legacy PNC Site option
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
-          // Potentially non-compliant = any opt-out signal (USPS,
-          // OptanonConsent, GPP) with status "did_not_opt_out". Derived from
-          // the compliance classification rather than the retired
-          // PotentiallyNonCompliantSites sheet. See isSchemaRowNonCompliant.
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => isSchemaRowNonCompliant(r.schema)).length;
         }
+
+        // New Schema Results
+        if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) {
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.DOES_NOT_HONOR).length;
+        }
+        if (seriesKey === COMPLIANCE_SERIES.HONORS) {
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.HONORS).length;
+        }
+        if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) {
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.NA_INVALID).length;
+        }
+
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;
         if (analysisMode === ANALYSIS_MODES.SCHEMA) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
