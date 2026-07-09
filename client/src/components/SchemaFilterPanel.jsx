@@ -306,9 +306,8 @@ export default function SchemaFilterPanel({
   schemaFilterMeta,
   selectedSchemaTokens,
   onChange,
-  geoStates,   // string[] of geo state codes e.g. ["CA"] or ["CO", "CT"]
+  geoStates, 
 }) {
-  const [collapsed, setCollapsed] = useState(false);
   const [expandedFamilies, setExpandedFamilies] = useState(new Set());
   const { tokens, labels } = schemaFilterMeta;
 
@@ -369,9 +368,6 @@ export default function SchemaFilterPanel({
 
       let toAdd;
       if (familyKey === "gpp" && Array.isArray(geoStates) && geoStates.length > 0) {
-        // Activate opted_out tokens only for:
-        //  • "US"  (national level — always relevant)
-        //  • every geo state currently selected (e.g. ["CO", "CT"] → usco + usct + usnat)
         const relevantStates = new Set(["US", ...geoStates]);
         toAdd = ft.filter((t) => {
           const parsed = parseSchemaToken(t);
@@ -381,7 +377,6 @@ export default function SchemaFilterPanel({
             parsed.status === "opted_out"
           );
         });
-        // Fall back to all opted_out if nothing matched (edge case)
         if (toAdd.length === 0) toAdd = statusTokens(ft, "opted_out");
       } else {
         toAdd = statusTokens(ft, "opted_out");
@@ -396,104 +391,51 @@ export default function SchemaFilterPanel({
     else add(subset);
   }
 
-  const activeCount = selectedSchemaTokens.length;
+  if (tokens.length === 0) return null;
 
   return (
-    <div className="sfp" id="schema-filters">
-      {/* Header */}
-      <div className="sfp__header">
-        <div className="sfp__header-left">
-          <h3 className="sfp__title">
-            Privacy Frameworks
-            {activeCount > 0 && (
-              <span className="sfp__badge">{activeCount}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {FAMILY_CONFIG.map(({ key, label, icon }) => {
+        const ft = familyTokens(tokens, key);
+        if (ft.length === 0) return null;
+        const isOn = expandedFamilies.has(key);
+        return (
+          <div
+            key={key}
+            className={`sfp__family-card ${isOn ? "sfp__family-card--on" : ""}`}
+            style={{ margin: 0 }}
+          >
+            <div className="sfp__family-header">
+              <span className="sfp__family-label">
+                {icon} {label}
+              </span>
+              <PowerToggle
+                on={isOn}
+                onClick={() => toggleFamily(key)}
+                label={label}
+              />
+            </div>
+            {isOn && (
+              <StatusPills
+                subset={ft}
+                selectedSet={selectedSet}
+                onToggle={toggleStatusPills}
+              />
             )}
-          </h3>
-        </div>
-        <div className="sfp__header-right">
-          <button
-            className="sfp__ctrl-btn"
-            onClick={() => onChange([...tokens])}
-            disabled={tokens.length === 0}
-          >
-            All
-          </button>
-          <button
-            className="sfp__ctrl-btn"
-            onClick={() => {
-              onChange([]);
-              setExpandedFamilies(new Set());
-            }}
-            disabled={activeCount === 0 && expandedFamilies.size === 0}
-          >
-            Clear
-          </button>
-          <button
-            className="sfp__collapse-btn"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-expanded={!collapsed}
-          >
-            {collapsed ? "Show ▼" : "Hide ▲"}
-          </button>
-        </div>
-      </div>
+          </div>
+        );
+      })}
 
-      {!collapsed && (
-        <div className="sfp__body">
-          {tokens.length === 0 ? (
-            <p className="sfp__empty">
-              No schema classifications found in the current dataset.
-            </p>
-          ) : (
-            <>
-              {/* All 4 family cards in a single 2×2 grid */}
-              <div className="sfp__families">
-                {FAMILY_CONFIG.map(({ key, label, icon }) => {
-                  const ft = familyTokens(tokens, key);
-                  if (ft.length === 0) return null;
-                  const isOn = expandedFamilies.has(key);
-                  return (
-                    <div
-                      key={key}
-                      className={`sfp__family-card ${isOn ? "sfp__family-card--on" : ""}`}
-                    >
-                      <div className="sfp__family-header">
-                        <span className="sfp__family-label">
-                          {icon} {label}
-                        </span>
-                        <PowerToggle
-                          on={isOn}
-                          onClick={() => toggleFamily(key)}
-                          label={label}
-                        />
-                      </div>
-                      {isOn && (
-                        <StatusPills
-                          subset={ft}
-                          selectedSet={selectedSet}
-                          onToggle={toggleStatusPills}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* GPP — 4th card, sits in column 2 of row 2 */}
-                {familyTokens(tokens, "gpp").length > 0 && (
-                  <GppCard
-                    tokens={familyTokens(tokens, "gpp")}
-                    selectedSet={selectedSet}
-                    onToggleFamily={toggleFamily}
-                    onAdd={add}
-                    onRemove={remove}
-                    labels={labels}
-                    isOn={expandedFamilies.has("gpp")}
-                  />
-                )}
-              </div>
-            </>
-          )}
-        </div>
+      {familyTokens(tokens, "gpp").length > 0 && (
+        <GppCard
+          tokens={familyTokens(tokens, "gpp")}
+          selectedSet={selectedSet}
+          onToggleFamily={toggleFamily}
+          onAdd={add}
+          onRemove={remove}
+          labels={labels}
+          isOn={expandedFamilies.has("gpp")}
+        />
       )}
     </div>
   );

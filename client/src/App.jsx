@@ -36,16 +36,16 @@ function LazyOnView({ children, fallback = null, rootMargin = "200px" }) {
 
   return <div ref={ref}>{show ? children : fallback}</div>;
 }
+
 import Tooltip from "./components/Tooltip";
-import SchemaFilterPanel from "./components/SchemaFilterPanel.jsx";
 import { renderJSONCell } from "./utils/renderJSONCell";
 import {
   ANALYSIS_MODES,
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
   isSchemaRowNonCompliant,
-  sortSchemaTokens,
 } from "./utils/schemaClassification.js";
+import { SPECIAL_SERIES } from "./utils/colorPalettes.js";
 import datasetsManifest from "./generated/datasets.json";
 
 const PAGE_SIZE = 10;
@@ -93,40 +93,6 @@ function findPeriod(state, key) {
   );
 }
 
-const DATA_TYPES = [
-  { key: "all", label: "All data" },
-  { key: "null", label: "Null sites" },
-  { key: "pnc", label: "Potentially non-compliant" },
-  {
-    key: "schema-noncompliant",
-    label: "Non-compliant (schema)",
-    schemaOnly: true,
-  },
-];
-
-const PNC_REASON_LIST = [
-  "Invalid_uspapi",
-  "Invalid_usp_cookies",
-  "uspapi",
-  "usp_cookies",
-  "MissingAfter_uspapi",
-  "MissingAfter_usp_cookies",
-  "Invalid_GPPString",
-  "SaleOptOut_USNAT",
-  "SharingOptOut_USNAT",
-  "TargetedAdvertisingOptOut_USNAT",
-  "SaleOptOut_State",
-  "SharingOptOut_State",
-  "TargetedAdvertisingOptOut_State",
-  "MissingAfterGPPString",
-  "Invalid_OptanonConsent",
-  "OptanonConsent",
-  "MissingAfterOptanonConsent",
-  "Well-Known",
-  "Invalid_Well-Known",
-  "SegmentSwitchGPP",
-];
-
 const STRUCTURED_COLUMNS = new Set([
   "urlclassification",
   "third_party_urls",
@@ -171,7 +137,7 @@ function parseReasons(value) {
       return parsed.map((item) => String(item).trim()).filter(Boolean);
     }
   } catch {
-    // Fall through to the simple parser below.
+    // Fall through
   }
   return str
     .replace(/^\[|\]$/g, "")
@@ -210,6 +176,7 @@ const getArrayParam = (keys, fallback) => {
 };
 
 function App() {
+  const [viewMode, setViewMode] = useState("graph");
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -221,9 +188,6 @@ function App() {
   const [selectedTimePeriod, setSelectedTimePeriod] = useState(() =>
     getParam(["period"], DEFAULT_PERIOD),
   );
-  const [selectedDataType, setSelectedDataType] = useState(() =>
-    getParam(["datatype", "type"], "all"),
-  );
   const [searchQuery, setSearchQuery] = useState(() =>
     getParam(["search", "url", "domain", "site"], ""),
   );
@@ -234,19 +198,48 @@ function App() {
   const [analysisMode, setAnalysisMode] = useState(() =>
     getParam(["mode"], ANALYSIS_MODES.SCHEMA),
   );
-  const [selectedReasons, setSelectedReasons] = useState(() =>
-    getArrayParam(["reasons"], []),
-  );
-  const [selectedSchemaTokens, setSelectedSchemaTokens] = useState(() =>
-    getArrayParam(["tokens", "schema"], []),
-  );
-  const [showFilters, setShowFilters] = useState(true);
   const [descriptionsOfColumns, setDescriptionsOfColumns] = useState({});
   const [headerFriendlyNames, setHeaderFriendlyNames] = useState({});
   const [visibleColumns, setVisibleColumns] = useState([]);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHeroDescription, setShowHeroDescription] = useState(false);
   const [activeChart, setActiveChart] = useState("trends");
+
+  const [chartFilters, setChartFilters] = useState(() => ({
+    selectedSeries: getArrayParam(["cseries"], []),
+    selectedStates: getArrayParam(["cstates"], ["CA"]),
+  }));
+  const [chartType, setChartType] = useState(() => getParam(["ctype"], "line"));
+  const setChartSelectedSeries = (updater) =>
+    setChartFilters((prev) => ({
+      ...prev,
+      selectedSeries:
+        typeof updater === "function" ? updater(prev.selectedSeries) : updater,
+    }));
+  const setChartSelectedStates = (updater) =>
+    setChartFilters((prev) => ({
+      ...prev,
+      selectedStates:
+        typeof updater === "function" ? updater(prev.selectedStates) : updater,
+    }));
+
+  const prevChartStates = useRef(chartFilters.selectedStates);
+  useEffect(() => {
+    const currentStates = chartFilters.selectedStates || [];
+    const prevStates = prevChartStates.current || [];
+    prevChartStates.current = currentStates;
+
+    const newlyAdded = currentStates.find(s => !prevStates.includes(s));
+    if (newlyAdded) {
+      setSelectedState(newlyAdded);
+      setCurrentPage(1);
+    } else if (currentStates.length > 0 && !currentStates.includes(selectedState)) {
+      setSelectedState(currentStates[0]);
+      setCurrentPage(1);
+    }
+  }, [chartFilters.selectedStates, selectedState]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -258,9 +251,6 @@ function App() {
     else params.delete("state");
 
     params.set("period", selectedTimePeriod);
-
-    if (selectedDataType !== "all") params.set("datatype", selectedDataType);
-    else params.delete("datatype");
 
     if (searchQuery) params.set("search", searchQuery);
     else {
@@ -274,14 +264,6 @@ function App() {
       params.set("mode", analysisMode);
     else params.delete("mode");
 
-    if (selectedReasons.length > 0)
-      params.set("reasons", selectedReasons.join(","));
-    else params.delete("reasons");
-
-    if (selectedSchemaTokens.length > 0)
-      params.set("tokens", selectedSchemaTokens.join(","));
-    else params.delete("tokens");
-
     const newRelativePathQuery =
       window.location.pathname + "?" + params.toString();
     const finalUrl = params.toString()
@@ -291,16 +273,7 @@ function App() {
     if (finalUrl !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, "", finalUrl);
     }
-  }, [
-    currentPage,
-    selectedState,
-    selectedTimePeriod,
-    selectedDataType,
-    searchQuery,
-    analysisMode,
-    selectedReasons,
-    selectedSchemaTokens,
-  ]);
+  }, [currentPage, selectedState, selectedTimePeriod, searchQuery, analysisMode]);
 
   const allowedTimePeriods = useMemo(
     () => datasetsManifest.periodsByState[selectedState] || [],
@@ -313,86 +286,42 @@ function App() {
   );
 
   const filePath = useMemo(
-    () => buildPath(currentPeriodEntry, selectedDataType, selectedState),
-    [currentPeriodEntry, selectedDataType, selectedState],
+    () => buildPath(currentPeriodEntry, "all", selectedState),
+    [currentPeriodEntry, selectedState],
   );
 
   useEffect(() => {
     let cancelled = false;
-
     fetch("/descriptions_of_columns.json")
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error("Failed to load descriptions_of_columns.json"),
-            ),
-      )
-      .then((data) => {
-        if (!cancelled && data && typeof data === "object") {
-          setDescriptionsOfColumns(data);
-        }
-      })
-      .catch((err) => {
-        console.warn("Failed to load column descriptions:", err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error("Failed to load descriptions_of_columns.json")))
+      .then((data) => { if (!cancelled && data && typeof data === "object") setDescriptionsOfColumns(data); })
+      .catch((err) => console.warn("Failed to load column descriptions:", err));
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-
     fetch("/header_friendly_names.json")
-      .then((res) =>
-        res.ok
-          ? res.json()
-          : Promise.reject(
-              new Error("Failed to load header_friendly_names.json"),
-            ),
-      )
-      .then((data) => {
-        if (!cancelled && data && typeof data === "object") {
-          setHeaderFriendlyNames(data);
-        }
-      })
-      .catch((err) => {
-        console.warn("Failed to load header friendly names:", err);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .then((res) => res.ok ? res.json() : Promise.reject(new Error("Failed to load header_friendly_names.json")))
+      .then((data) => { if (!cancelled && data && typeof data === "object") setHeaderFriendlyNames(data); })
+      .catch((err) => console.warn("Failed to load header friendly names:", err));
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     const periods = datasetsManifest.periodsByState[selectedState] || [];
-    const hasMatch = periods.some(
-      (period) => period.key === selectedTimePeriod,
-    );
+    const hasMatch = periods.some((period) => period.key === selectedTimePeriod);
     if (!hasMatch && periods.length > 0) {
       setSelectedTimePeriod(periods[periods.length - 1].key);
       setCurrentPage(1);
     }
   }, [selectedState, selectedTimePeriod]);
 
-  useEffect(() => {
-    setSelectedReasons([]);
-    setSelectedSchemaTokens([]);
-    setCurrentPage(1);
-  }, [analysisMode]);
+  useEffect(() => { setCurrentPage(1); }, [analysisMode]);
 
   useEffect(() => {
     let cancelled = false;
-
-    setLoading(true);
-    setError("");
-    setHeaders([]);
-    setRows([]);
-    setSelectedReasons([]);
-    setSelectedSchemaTokens([]);
+    setLoading(true); setError(""); setHeaders([]); setRows([]);
 
     if (!filePath) {
       setError("No dataset available for the selected state and time period.");
@@ -401,21 +330,10 @@ function App() {
     }
 
     Papa.parse(filePath, {
-      download: true,
-      header: true,
-      dynamicTyping: false,
-      skipEmptyLines: true,
+      download: true, header: true, dynamicTyping: false, skipEmptyLines: true,
       complete: (parsed) => {
         if (cancelled) return;
-
-        if (parsed.errors && parsed.errors.length > 0) {
-          console.warn("CSV parse errors:", parsed.errors);
-        }
-
-        if (parsed.meta?.fields) {
-          setHeaders(parsed.meta.fields.map((field) => String(field).trim()));
-        }
-
+        if (parsed.meta?.fields) setHeaders(parsed.meta.fields.map((field) => String(field).trim()));
         setRows((parsed.data || []).map(normalizeRow));
         setLoading(false);
       },
@@ -425,10 +343,7 @@ function App() {
         setLoading(false);
       },
     });
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [filePath]);
 
   useEffect(() => {
@@ -449,26 +364,15 @@ function App() {
     return [];
   }, [headers, rows]);
 
-  useEffect(() => {
-    setVisibleColumns(displayHeaders);
-  }, [displayHeaders]);
+  useEffect(() => { setVisibleColumns(displayHeaders); }, [displayHeaders]);
 
   const hasSchemaColumn = displayHeaders.includes(SCHEMA_CLASSIFICATION_COLUMN);
-  const schemaModeUnavailable =
-    analysisMode === ANALYSIS_MODES.SCHEMA && !hasSchemaColumn;
+  const schemaModeUnavailable = analysisMode === ANALYSIS_MODES.SCHEMA && !hasSchemaColumn;
 
-  useEffect(() => {
-    if (schemaModeUnavailable) {
-      setShowColumnPicker(false);
-    }
-  }, [schemaModeUnavailable]);
+  useEffect(() => { if (schemaModeUnavailable) setShowColumnPicker(false); }, [schemaModeUnavailable]);
 
   const rowRecords = useMemo(
-    () =>
-      rows.map((row) => ({
-        row,
-        schema: getSchemaClassificationForRow(row),
-      })),
+    () => rows.map((row) => ({ row, schema: getSchemaClassificationForRow(row) })),
     [rows],
   );
 
@@ -477,100 +381,37 @@ function App() {
     [rowRecords],
   );
 
-  const schemaFilterMeta = useMemo(() => {
-    const labels = {};
-    const descriptions = {};
-    const tokenSet = new Set();
-
-    rowRecords.forEach(({ schema }) => {
-      schema.tokens.forEach((token) => {
-        tokenSet.add(token);
-        labels[token] = schema.labels[token] || token;
-        descriptions[token] = schema.descriptions[token] || "";
-      });
-    });
-
-    const tokens = sortSchemaTokens(tokenSet);
-    return { tokens, labels, descriptions };
-  }, [rowRecords]);
-
   const firstStickyColumn = useMemo(() => {
-    const columns =
-      Array.isArray(visibleColumns) && visibleColumns.length > 0
-        ? visibleColumns
-        : displayHeaders;
+    const columns = Array.isArray(visibleColumns) && visibleColumns.length > 0 ? visibleColumns : displayHeaders;
     return columns.length > 0 ? columns[0] : undefined;
   }, [visibleColumns, displayHeaders]);
 
-  const legacyReasonOptions = useMemo(() => {
-    if (selectedDataType !== "pnc") return [];
-    return PNC_REASON_LIST;
-  }, [selectedDataType]);
-
   const filteredRecords = useMemo(() => {
     if (schemaModeUnavailable) return [];
-
     let base = rowRecords;
 
-    if (selectedDataType === "null") {
-      base = base.filter(
-        ({ row }) =>
-          String(row?.site_isnull ?? "")
-            .trim()
-            .toUpperCase() === "TRUE",
-      );
-    }
-
-    if (
-      analysisMode === ANALYSIS_MODES.LEGACY &&
-      selectedDataType === "pnc" &&
-      selectedReasons.length > 0
-    ) {
-      base = base.filter(({ row }) => {
-        const reasons = parseReasons(row?.Reasons_Non_Compliant);
-        return reasons.some((reason) => selectedReasons.includes(reason));
+    if (chartFilters.selectedSeries && chartFilters.selectedSeries.length > 0) {
+      base = base.filter(({ row, schema }) => {
+        return chartFilters.selectedSeries.some((seriesKey) => {
+          if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
+          if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
+          if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
+          if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
+          if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
+          if (analysisMode === ANALYSIS_MODES.SCHEMA) return schema?.tokens?.includes(seriesKey);
+          return parseReasons(row?.Reasons_Non_Compliant).includes(seriesKey);
+        });
       });
     }
 
-    // Schema-derived non-compliant filter: any did_not_opt_out status.
-    if (
-      analysisMode === ANALYSIS_MODES.SCHEMA &&
-      selectedDataType === "schema-noncompliant"
-    ) {
-      base = base.filter(({ schema }) => isSchemaRowNonCompliant(schema));
-    }
-
-    if (
-      analysisMode === ANALYSIS_MODES.SCHEMA &&
-      selectedSchemaTokens.length > 0
-    ) {
-      base = base.filter(({ schema }) =>
-        schema.tokens.some((token) => selectedSchemaTokens.includes(token)),
-      );
-    }
-
-    const query = String(searchQuery || "")
-      .trim()
-      .toLowerCase();
+    const query = String(searchQuery || "").trim().toLowerCase();
     if (query.length > 0) {
       base = base.filter(({ row }) => getRowSearchValue(row).includes(query));
     }
-
     return base;
-  }, [
-    analysisMode,
-    rowRecords,
-    schemaModeUnavailable,
-    searchQuery,
-    selectedDataType,
-    selectedReasons,
-    selectedSchemaTokens,
-  ]);
+  }, [analysisMode, rowRecords, schemaModeUnavailable, searchQuery, chartFilters.selectedSeries]);
 
-  const filteredRows = useMemo(
-    () => filteredRecords.map((record) => record.row),
-    [filteredRecords],
-  );
+  const filteredRows = useMemo(() => filteredRecords.map((record) => record.row), [filteredRecords]);
 
   const totalItems = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -578,242 +419,109 @@ function App() {
   const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
   const endIndex = Math.min(startIndex + PAGE_SIZE, totalItems);
 
-  const pageRows = useMemo(
-    () => filteredRows.slice(startIndex, endIndex),
-    [filteredRows, startIndex, endIndex],
-  );
-
-  const visibleTableColumns =
-    visibleColumns.length > 0 ? visibleColumns : displayHeaders;
-
-  const showLegacyReasonFilters =
-    analysisMode === ANALYSIS_MODES.LEGACY && selectedDataType === "pnc";
-  const showSchemaFilters =
-    analysisMode === ANALYSIS_MODES.SCHEMA && hasSchemaColumn;
+  const pageRows = useMemo(() => filteredRows.slice(startIndex, endIndex), [filteredRows, startIndex, endIndex]);
+  const visibleTableColumns = visibleColumns.length > 0 ? visibleColumns : displayHeaders;
 
   const handleExportFiltered = () => {
     try {
-      const data = filteredRows.map((row) =>
-        visibleTableColumns.map((header) =>
-          row && row[header] != null ? String(row[header]) : "",
-        ),
-      );
+      const data = filteredRows.map((row) => visibleTableColumns.map((header) => row && row[header] != null ? String(row[header]) : ""));
       const csv = Papa.unparse({ fields: visibleTableColumns, data });
-      const blob = new Blob(["\ufeff", csv], {
-        type: "text/csv;charset=utf-8;",
-      });
+      const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url;
-      link.download = `GPC_${selectedState}_${selectedTimePeriod}_${selectedDataType}_${analysisMode}_filtered.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Failed to export CSV:", err);
-    }
+      link.href = url; link.download = `GPC_${selectedState}_${selectedTimePeriod}_${analysisMode}_filtered.csv`;
+      document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    } catch (err) { console.error("Failed to export CSV:", err); }
   };
 
-  return (
-    <div className="app-container">
-      <button
-        className={`settings-toggle ${showSettings ? "settings-toggle--active" : ""}`}
-        onClick={() => setShowSettings(!showSettings)}
-        title="Settings"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          fill="currentColor"
-          viewBox="0 0 16 16"
-        >
-          <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z" />
-        </svg>
-      </button>
+  const tableContent = (
+    <div className="table-section-view">
+      <h2 className="section-title" style={{ marginTop: 0 }}>Filter GPC Web Crawler Data</h2>
 
-      <div className="hero">
-        <h1>GPC Crawl Data</h1>
-        <p className="intro">
-          The GPC Web Crawler analyzes websites' compliance with{" "}
-          <a
-            href="https://globalprivacycontrol.org/"
-            target="_blank"
-            rel="noreferrer noopener"
+      {/* ROW 1: State, Time Period, Edit Columns, Export Filtered Data */}
+      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px", width: "100%" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="state-select" style={{ margin: 0, fontWeight: "500", color: "#475569" }}>State:</label>
+          <select
+            id="state-select"
+            value={selectedState}
+            onChange={(e) => {
+              setSelectedState(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{ margin: 0 }}
           >
-            Global Privacy Control (GPC)
-          </a>{" "}
-          at scale. GPC is a privacy preference signal that people can use to
-          exercise their rights to opt out from web tracking. The GPC Web
-          Crawler is based on{" "}
-          <a
-            href="https://www.selenium.dev/"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            Selenium
-          </a>{" "}
-          and the{" "}
-          <a
-            href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
-            OptMeowt Analysis extension
-          </a>
-          . To track the evolution of GPC compliance on the web over time we are
-          performing regular crawls of a set of 11,708 websites.
-        </p>
-      </div>
-
-      {showSettings && (
-        <div className="settings-panel">
-          <div className="card card--padded">
-            <div className="toolbar mode-toolbar__inner">
-              <label htmlFor="analysis-mode-select">Analysis Mode:</label>
-              <select
-                id="analysis-mode-select"
-                value={analysisMode}
-                onChange={(e) => setAnalysisMode(e.target.value)}
-              >
-                <option value={ANALYSIS_MODES.SCHEMA}>
-                  Schema classifications
-                </option>
-                <option value={ANALYSIS_MODES.LEGACY}>Legacy reasons</option>
-              </select>
-              <span className="mode-toolbar__hint">
-                {analysisMode === ANALYSIS_MODES.LEGACY
-                  ? "Legacy mode uses the existing Reasons_Non_Compliant CSV columns."
-                  : `Schema mode uses the ${SCHEMA_CLASSIFICATION_COLUMN} column. Select "Non-compliant (schema)" to see sites with any Did Not Opt Out classification.`}
-              </span>
-            </div>
-          </div>
+            {AVAILABLE_STATES.map((stateCode) => (
+              <option key={stateCode} value={stateCode}>
+                {stateCode}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
 
-      <div style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "16px 0 0" }}>
-        <button
-          className="chip"
-          onClick={() => setActiveChart("trends")}
-          disabled={activeChart === "trends"}
-          style={{
-            opacity: activeChart === "trends" ? 0.5 : 1,
-            cursor: activeChart === "trends" ? "default" : "pointer",
-          }}
-        >
-          Compliance Trends
-        </button>
-        <button
-          className="chip"
-          onClick={() => setActiveChart("gpp")}
-          disabled={activeChart === "gpp"}
-          style={{
-            opacity: activeChart === "gpp" ? 0.5 : 1,
-            cursor: activeChart === "gpp" ? "default" : "pointer",
-          }}
-        >
-          GPP Breakdown
-        </button>
-      </div>
-
-      <div style={{ display: activeChart === "trends" ? "block" : "none" }}>
-        <ReasonTrendsChart
-          analysisMode={analysisMode}
-          timePeriods={TIME_PERIODS}
-          stateMonths={STATE_MONTHS}
-        />
-      </div>
-
-      <div style={{ display: activeChart === "gpp" ? "block" : "none" }}>
-        <LazyOnView
-          fallback={
-            <div
-              className="card card--padded section"
-              style={{ minHeight: 360 }}
-              aria-hidden="true"
-            />
-          }
-        >
-          <Suspense
-            fallback={
-              <div
-                className="card card--padded section"
-                style={{ minHeight: 360 }}
-              >
-                <p className="muted-text">Loading GPP breakdown…</p>
-              </div>
-            }
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="time-period-select" style={{ margin: 0, fontWeight: "500", color: "#475569" }}>Time Period:</label>
+          <select
+            id="time-period-select"
+            value={selectedTimePeriod}
+            onChange={(e) => {
+              setSelectedTimePeriod(e.target.value);
+              setCurrentPage(1);
+            }}
+            style={{ margin: 0 }}
           >
-            <GppSectionBreakdownChart
-              timePeriods={TIME_PERIODS}
-              stateMonths={STATE_MONTHS}
-            />
-          </Suspense>
-        </LazyOnView>
+            {allowedTimePeriods.map((period) => (
+              <option key={period.key} value={period.key}>
+                {period.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
+          <button
+            type="button"
+            aria-expanded={showColumnPicker}
+            aria-controls="column-picker"
+            onClick={() => setShowColumnPicker((open) => !open)}
+            disabled={schemaModeUnavailable || loading}
+            style={{ margin: 0 }}
+          >
+            Edit Columns
+          </button>
+          <button
+            onClick={handleExportFiltered}
+            disabled={totalItems === 0 || loading || schemaModeUnavailable}
+            style={{ margin: 0 }}
+          >
+            Export filtered data ({totalItems})
+          </button>
+        </div>
       </div>
 
-      <h2 className="section-title">Filter GPC Web Crawler Data</h2>
-      <div className="toolbar" role="group" aria-label="Data filters">
-        <label htmlFor="state-select">State:</label>
-        <select
-          id="state-select"
-          value={selectedState}
-          onChange={(e) => {
-            setSelectedState(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          {AVAILABLE_STATES.map((stateCode) => (
-            <option key={stateCode} value={stateCode}>
-              {stateCode}
-            </option>
-          ))}
-        </select>
+      {/* ROW 2: Smaller & Wider Sites after filter box + Search URL */}
+      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "20px", width: "100%" }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          gap: "10px", 
+          background: "#f8fafc", 
+          border: "1px solid #e2e8f0", 
+          borderRadius: "6px", 
+          padding: "6px 14px",
+          height: "38px",
+          boxSizing: "border-box"
+        }}>
+          <span style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a" }}>
+            {totalItems.toLocaleString()}
+          </span>
+          <span style={{ fontSize: "12px", fontWeight: "500", color: "#64748b", whiteSpace: "nowrap" }}>
+            Sites (after filters)
+          </span>
+        </div>
 
-        <label htmlFor="time-period-select">Time Period:</label>
-        <select
-          id="time-period-select"
-          value={selectedTimePeriod}
-          onChange={(e) => {
-            setSelectedTimePeriod(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          {allowedTimePeriods.map((period) => (
-            <option key={period.key} value={period.key}>
-              {period.label}
-            </option>
-          ))}
-        </select>
-
-        <label htmlFor="data-type-select">Data Type:</label>
-        <select
-          id="data-type-select"
-          value={selectedDataType}
-          onChange={(e) => {
-            setSelectedDataType(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          {DATA_TYPES.map((type) => (
-            <option
-              key={type.key}
-              value={type.key}
-              disabled={
-                type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA
-              }
-            >
-              {type.label}
-              {type.schemaOnly && analysisMode !== ANALYSIS_MODES.SCHEMA
-                ? " (schema mode only)"
-                : ""}
-            </option>
-          ))}
-        </select>
-
-        <div className="toolbar-item-group">
-          <label htmlFor="url-search">Search URL:</label>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "250px" }}>
+          <label htmlFor="url-search" style={{ margin: 0, fontWeight: "500", color: "#475569", whiteSpace: "nowrap" }}>Search URL:</label>
           <input
             id="url-search"
             type="text"
@@ -824,24 +532,9 @@ function App() {
               setSearchQuery(e.target.value);
             }}
             className="input"
+            style={{ width: "100%", margin: 0 }}
           />
         </div>
-
-        <button
-          type="button"
-          aria-expanded={showColumnPicker}
-          aria-controls="column-picker"
-          onClick={() => setShowColumnPicker((open) => !open)}
-          disabled={schemaModeUnavailable || loading}
-        >
-          Edit Columns
-        </button>
-        <button
-          onClick={handleExportFiltered}
-          disabled={totalItems === 0 || loading || schemaModeUnavailable}
-        >
-          Export filtered data ({totalItems})
-        </button>
       </div>
 
       {analysisMode === ANALYSIS_MODES.SCHEMA && schemaParseErrorCount > 0 && (
@@ -857,26 +550,18 @@ function App() {
           className="card card--padded column-picker"
           role="group"
           aria-label="Toggle columns"
+          style={{ position: "absolute", zIndex: 100, width: "100%", boxSizing: "border-box" }}
         >
           <div className="column-picker-header">
             <strong>Select columns to display</strong>
             <div className="column-picker-actions">
-              <button
-                type="button"
-                className="compact-btn"
-                onClick={() => setVisibleColumns(displayHeaders)}
-                disabled={displayHeaders.length === 0}
-              >
-                Select all
-              </button>
+              <button type="button" className="compact-btn" onClick={() => setVisibleColumns(displayHeaders)} disabled={displayHeaders.length === 0}>Select all</button>
               <button
                 type="button"
                 className="compact-btn"
                 onClick={() => {
                   if (visibleColumns.length <= 1) return;
-                  setVisibleColumns((prev) =>
-                    prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1),
-                  );
+                  setVisibleColumns((prev) => prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1));
                 }}
                 disabled={visibleColumns.length <= 1}
               >
@@ -891,16 +576,11 @@ function App() {
               return (
                 <label key={column} htmlFor={id} className="column-item">
                   <input
-                    id={id}
-                    type="checkbox"
-                    checked={checked}
+                    id={id} type="checkbox" checked={checked}
                     onChange={() => {
                       setVisibleColumns((prev) => {
                         const hasColumn = prev.includes(column);
-                        if (hasColumn) {
-                          if (prev.length === 1) return prev;
-                          return prev.filter((value) => value !== column);
-                        }
+                        if (hasColumn) { if (prev.length === 1) return prev; return prev.filter((value) => value !== column); }
                         return [...prev, column];
                       });
                       setCurrentPage(1);
@@ -914,154 +594,36 @@ function App() {
         </div>
       )}
 
-      <div className="kpis">
-        <div className="kpi">
-          <div className="kpi-value">{totalItems.toLocaleString()}</div>
-          <div className="kpi-label">Sites (after filters)</div>
-        </div>
-        <div className="kpi">
-          <div className="kpi-value">
-            {totalItems > 0 ? `${startIndex + 1}-${endIndex}` : "0-0"}
-          </div>
-          <div className="kpi-label">Sites on this page</div>
-        </div>
-      </div>
-
-      {showLegacyReasonFilters && (
-        <div id="reason-filters" className="compact-filters">
-          <div className="filter-header">
-            <h3>
-              Reason Filters{" "}
-              {selectedReasons.length > 0 &&
-                `(${selectedReasons.length} selected)`}
-            </h3>
-            <button
-              className="toggle-filters-btn"
-              onClick={() => setShowFilters((visible) => !visible)}
-            >
-              {showFilters ? "Hide Filters" : "Show Filters"}
-            </button>
-          </div>
-          {showFilters && (
-            <div className="filter-content">
-              <div className="filter-controls">
-                <button
-                  className="compact-btn"
-                  onClick={() => {
-                    setSelectedReasons(legacyReasonOptions);
-                    setCurrentPage(1);
-                  }}
-                  disabled={legacyReasonOptions.length === 0}
-                >
-                  All
-                </button>
-                <button
-                  className="compact-btn"
-                  onClick={() => {
-                    setSelectedReasons([]);
-                    setCurrentPage(1);
-                  }}
-                  disabled={
-                    legacyReasonOptions.length === 0 &&
-                    selectedReasons.length === 0
-                  }
-                >
-                  Clear
-                </button>
-              </div>
-              <div className="reason-grid">
-                {legacyReasonOptions.map((reason) => {
-                  const active = selectedReasons.includes(reason);
-                  return (
-                    <button
-                      key={reason}
-                      className={`reason-filter-btn${active ? " active" : ""}`}
-                      onClick={() => {
-                        setCurrentPage(1);
-                        setSelectedReasons((prev) =>
-                          prev.includes(reason)
-                            ? prev.filter((value) => value !== reason)
-                            : [...prev, reason],
-                        );
-                      }}
-                    >
-                      {reason}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showSchemaFilters && (
-        <SchemaFilterPanel
-          schemaFilterMeta={schemaFilterMeta}
-          selectedSchemaTokens={selectedSchemaTokens}
-          geoStates={[selectedState]}
-          onChange={(tokens) => {
-            setSelectedSchemaTokens(tokens);
-            setCurrentPage(1);
-          }}
-        />
-      )}
-
       {loading ? (
-        <div id="table-wrapper" role="status" aria-live="polite">
-          <div style={{ padding: 16 }}>
-            <h2>Loading CSV...</h2>
-            <p>Fetching configuration and data.</p>
-          </div>
+        <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16 }}>
+          <h2>Loading CSV...</h2>
+          <p>Fetching configuration and data.</p>
         </div>
       ) : error ? (
-        <div id="table-wrapper" role="status" aria-live="polite">
-          <div style={{ padding: 16, color: "#b00020" }}>
-            <h2>Error</h2>
-            <pre>{error}</pre>
-          </div>
+        <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16, color: "#b00020" }}>
+          <h2>Error</h2><pre>{error}</pre>
         </div>
       ) : schemaModeUnavailable ? (
-        <div id="table-wrapper" role="status" aria-live="polite">
-          <div className="empty-state">
-            <h2>Schema mode unavailable</h2>
-            <p>
-              This CSV does not yet include the future{" "}
-              <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column. Switch back to
-              legacy reasons to inspect this dataset.
-            </p>
-          </div>
+        <div id="table-wrapper" className="empty-state" role="status" aria-live="polite" style={{ padding: 16 }}>
+          <h2>Schema mode unavailable</h2>
+          <p>This CSV does not yet include the future <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column. Switch back to legacy reasons to inspect this dataset.</p>
         </div>
       ) : filteredRows.length === 0 ? (
-        <p>No data rows.</p>
+        <div id="table-wrapper">
+          <p style={{ padding: "16px 0" }}>No data rows.</p>
+        </div>
       ) : (
         <div id="table-wrapper">
           <div id="pager">
             <div>
               {totalItems > 0 && (
-                <span>
-                  Showing {startIndex + 1}-{endIndex} of {totalItems}
-                </span>
+                <span>Showing {startIndex + 1}-{endIndex} of {totalItems}</span>
               )}
             </div>
             <div className="pager-actions">
-              <button
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                disabled={safeCurrentPage <= 1}
-              >
-                Previous
-              </button>
-              <span>
-                Page {safeCurrentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() =>
-                  setCurrentPage((page) => Math.min(totalPages, page + 1))
-                }
-                disabled={safeCurrentPage >= totalPages}
-              >
-                Next
-              </button>
+              <button onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
+              <span>Page {safeCurrentPage} / {totalPages}</span>
+              <button onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
             </div>
           </div>
           <div id="table-scroll">
@@ -1069,28 +631,16 @@ function App() {
               <thead>
                 <tr>
                   {visibleTableColumns.map((header) => (
-                    <th
-                      key={header}
-                      className={
-                        header === firstStickyColumn ? "col-sticky" : undefined
-                      }
-                    >
+                    <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
                       {descriptionsOfColumns[header] ? (
                         <div className="header-wrapper">
-                          <span className="header-content">
-                            {headerFriendlyNames[header] || header}
-                          </span>
-                          <Tooltip
-                            content={descriptionsOfColumns[header]}
-                            position="bottom"
-                          >
+                          <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                          <Tooltip content={descriptionsOfColumns[header]} position="bottom">
                             <span className="tooltip-icon">?</span>
                           </Tooltip>
                         </div>
                       ) : (
-                        <span className="header-content">
-                          {headerFriendlyNames[header] || header}
-                        </span>
+                        <span className="header-content">{headerFriendlyNames[header] || header}</span>
                       )}
                     </th>
                   ))}
@@ -1102,27 +652,15 @@ function App() {
                     {visibleTableColumns.map((header) => (
                       <td
                         key={header}
-                        className={
-                          [
-                            header === "Reasons_Non_Compliant"
-                              ? "Reasons_Non_Compliant"
-                              : "",
-                            header === firstStickyColumn ? "col-sticky" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ") || undefined
-                        }
+                        className={[
+                          header === "Reasons_Non_Compliant" ? "Reasons_Non_Compliant" : "",
+                          header === firstStickyColumn ? "col-sticky" : "",
+                        ].filter(Boolean).join(" ") || undefined}
                       >
-                        {STRUCTURED_COLUMNS.has(
-                          String(header).toLowerCase(),
-                        ) ? (
-                          <span className="cell-content">
-                            {renderJSONCell(row[header])}
-                          </span>
+                        {STRUCTURED_COLUMNS.has(String(header).toLowerCase()) ? (
+                          <span className="cell-content">{renderJSONCell(row[header])}</span>
                         ) : (
-                          <span className="cell-content">
-                            {String(row[header] ?? "")}
-                          </span>
+                          <span className="cell-content">{String(row[header] ?? "")}</span>
                         )}
                       </td>
                     ))}
@@ -1134,33 +672,214 @@ function App() {
           <div id="pager">
             <div>
               {totalItems > 0 && (
-                <span>
-                  Showing {startIndex + 1}-{endIndex} of {totalItems}
-                </span>
+                <span>Showing {startIndex + 1}-{endIndex} of {totalItems}</span>
               )}
             </div>
             <div className="pager-actions">
-              <button
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                disabled={safeCurrentPage <= 1}
-              >
-                Previous
-              </button>
-              <span>
-                Page {safeCurrentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() =>
-                  setCurrentPage((page) => Math.min(totalPages, page + 1))
-                }
-                disabled={safeCurrentPage >= totalPages}
-              >
-                Next
-              </button>
+              <button onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
+              <span>Page {safeCurrentPage} / {totalPages}</span>
+              <button onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+
+  return (
+    <div className="app-container">
+      <style>{`
+        #table-scroll table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        #table-scroll th {
+          padding: 6px 12px;
+          text-align: left;
+        }
+        #table-scroll td {
+          padding: 4px 12px;
+          max-width: 260px;
+          min-width: 140px;
+          position: relative;
+          box-sizing: border-box;
+          vertical-align: top;
+        }
+        #table-scroll td .cell-content {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: normal;
+          max-width: 100%;
+          line-height: 1.3em;
+          max-height: 2.6em;
+        }
+        #table-scroll td:hover {
+          overflow: visible;
+          z-index: 90;
+        }
+        #table-scroll td:hover .cell-content {
+          display: block;
+          position: absolute;
+          left: 0;
+          top: 0;
+          min-width: 100%;
+          width: max-content;
+          max-width: 520px;
+          white-space: normal;
+          background: #ffffff;
+          padding: 8px 12px;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+          border: 1px solid #cbd5e1;
+          z-index: 120;
+          border-radius: 4px;
+          word-break: break-word;
+          color: #0f172a;
+          max-height: none;
+          -webkit-line-clamp: unset;
+        }
+        #table-scroll td.col-sticky:hover .cell-content {
+          left: 0;
+        }
+        .hero-title-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+        .hero-toggle-btn {
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 4px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          color: #64748b;
+          border-radius: 4px;
+          transition: background-color 0.2s, color 0.2s;
+        }
+        .hero-toggle-btn:hover {
+          background-color: #f1f5f9;
+          color: #0f172a;
+        }
+        .hero-toggle-icon {
+          transition: transform 0.2s ease;
+        }
+      `}</style>
+
+      <button
+        className={`settings-toggle ${showSettings ? "settings-toggle--active" : ""}`}
+        onClick={() => setShowSettings(!showSettings)}
+        title="Settings"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z" />
+        </svg>
+      </button>
+
+      <div className="hero">
+        <div className="hero-title-wrapper">
+          <h1 style={{ margin: 0 }}>GPC Crawl Data</h1>
+          <button
+            type="button"
+            className="hero-toggle-btn"
+            onClick={() => setShowHeroDescription((prev) => !prev)}
+            aria-expanded={showHeroDescription}
+            title={showHeroDescription ? "Hide description" : "Show description"}
+          >
+            <svg
+              className="hero-toggle-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              style={{ transform: showHeroDescription ? "rotate(180deg)" : "rotate(0deg)" }}
+            >
+              <path fillRule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z" />
+            </svg>
+          </button>
+        </div>
+        
+        {showHeroDescription && (
+          <p className="intro">
+            The GPC Web Crawler analyzes websites' compliance with{" "}
+            <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener">Global Privacy Control (GPC)</a>{" "}
+            at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
+            The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener">Selenium</a>{" "}
+            and the <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension" target="_blank" rel="noreferrer noopener">OptMeowt Analysis extension</a>.
+            To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
+          </p>
+        )}
+      </div>
+
+      {showSettings && (
+        <div className="settings-panel">
+          <div className="card card--padded">
+            <div className="toolbar mode-toolbar__inner">
+              <label htmlFor="analysis-mode-select">Analysis Mode:</label>
+              <select id="analysis-mode-select" value={analysisMode} onChange={(e) => setAnalysisMode(e.target.value)}>
+                <option value={ANALYSIS_MODES.SCHEMA}>Schema classifications</option>
+                <option value={ANALYSIS_MODES.LEGACY}>Legacy reasons</option>
+              </select>
+              <span className="mode-toolbar__hint">
+                {analysisMode === ANALYSIS_MODES.LEGACY
+                  ? "Legacy mode uses the existing Reasons_Non_Compliant CSV columns."
+                  : `Schema mode uses the ${SCHEMA_CLASSIFICATION_COLUMN} column. Select "Non-compliant (schema)" to see sites with any Did Not Opt Out classification.`}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ReasonTrendsChart
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        tableContent={tableContent}
+        analysisMode={analysisMode}
+        timePeriods={TIME_PERIODS}
+        stateMonths={STATE_MONTHS}
+        selectedSeries={chartFilters.selectedSeries}
+        setSelectedSeries={setChartSelectedSeries}
+        selectedStates={chartFilters.selectedStates}
+        setSelectedStates={setChartSelectedStates}
+        chartType={chartType}
+        setChartType={setChartType}
+        activeChart={activeChart}
+        setActiveChart={setActiveChart}
+        setCurrentPage={setCurrentPage}
+        gppSection={
+          <LazyOnView
+            fallback={
+              <div
+                className="card card--padded section"
+                style={{ minHeight: 360 }}
+                aria-hidden="true"
+              />
+            }
+          >
+            <Suspense
+              fallback={
+                <div
+                  className="card card--padded section"
+                  style={{ minHeight: 360 }}
+                >
+                  <p className="muted-text">Loading GPP breakdown…</p>
+                </div>
+              }
+            >
+              <GppSectionBreakdownChart
+                timePeriods={TIME_PERIODS}
+                stateMonths={STATE_MONTHS}
+              />
+            </Suspense>
+          </LazyOnView>
+        }
+      />
     </div>
   );
 }

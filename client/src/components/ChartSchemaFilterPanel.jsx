@@ -8,20 +8,12 @@ import SchemaFilterPanel from "./SchemaFilterPanel.jsx";
  *
  * Redesigned "Chart Schema Filters" for ReasonTrendsChart.
  * Shows:
- * - A "Quick Series" row for the special/overview chips
+ * - A "Quick Series" section for the special/overview cards
  * (Potentially Non-Compliant Sites, Null Sites, and Top-Level Compliance Results)
- * - In schema mode: the full hierarchical SchemaFilterPanel for token-level
- * chart series
+ * - In schema mode: the full hierarchical SchemaFilterPanel for token-level chart series
  * - In legacy mode: the flat reason chip grid (unchanged from before)
- *
- * Props:
- * seriesOptions      – array of { key, label, description }
- * selectedSeries     – array of active keys
- * onToggle           – (key) => void
- * isSchemaMode       – boolean
  */
 
-// Added the new top-level compliance results to the special keys
 const SPECIAL_KEYS = new Set([
   "Potentially Non-Compliant Sites",
   "Likely Does Not Honor GPC",
@@ -97,19 +89,17 @@ export default function ChartSchemaFilterPanel({
   );
 
   function handleSchemaTokenChange(newTokens) {
-    // Keep non-schema items (specials + any legacy), replace schema tokens only.
     const schemaKeySet = new Set(schemaTokenOptions.map((o) => o.key));
     const kept = selectedSeries.filter((k) => !schemaKeySet.has(k));
     const nextSchemaKeys = newTokens.filter((k) => schemaKeySet.has(k));
     const merged = [...kept, ...nextSchemaKeys];
-    // Apply diffs via onToggle so parent state stays consistent
+    
     const prev = new Set(selectedSeries);
     const next = new Set(merged);
     schemaKeySet.forEach((k) => {
       if (prev.has(k) !== next.has(k)) onToggle(k);
     });
   }
-
 
   return (
     <div className="csfp">
@@ -120,17 +110,17 @@ export default function ChartSchemaFilterPanel({
         </strong>
       </div>
 
-      {/* ── Special / overview chips ── */}
+      {/* ── Special / overview cards stacked vertically ── */}
       {specialOptions.length > 0 && (
         <div className="csfp__specials-section" style={{ padding: "8px 0 16px" }}>
-          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          {/* Forces cards to stack vertically and stretch full width */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}>
             {specialOptions.map((opt) => {
               const active = selectedSet.has(opt.key);
               
               let icon = "📊";
               let label = opt.label;
               
-              // Custom icons and labels for special keys
               if (opt.key === "Potentially Non-Compliant Sites") { icon = "⚠️"; label = "All Potentially Non-Compliant Sites"; }
               if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
@@ -138,27 +128,29 @@ export default function ChartSchemaFilterPanel({
               if (opt.key === "Null Sites") { icon = "∅"; label = "All Null Sites"; }
 
               return (
-                <Tooltip key={opt.key} content={opt.description} position="top">
-                  <div
-                    className={`sfp__family-card ${active ? "sfp__family-card--on" : ""}`}
-                    style={{ cursor: "pointer", flex: "1 1 0%", minWidth: "280px", margin: 0 }}
-                    onClick={() => onToggle(opt.key)}
-                  >
-                    <div className="sfp__family-header">
+                <div
+                  key={opt.key}
+                  className={`sfp__family-card ${active ? "sfp__family-card--on" : ""}`}
+                  style={{ cursor: "pointer", margin: 0, width: "100%", boxSizing: "border-box" }}
+                  onClick={() => onToggle(opt.key)}
+                >
+                  <div className="sfp__family-header">
+                    {/* Tooltip isolated safely inside the text item layout wrapper */}
+                    <Tooltip content={opt.description} position="top">
                       <span className="sfp__family-label">
                         {icon} {label}
                       </span>
-                      <PowerToggle
-                        on={active}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggle(opt.key);
-                        }}
-                        label={label}
-                      />
-                    </div>
+                    </Tooltip>
+                    <PowerToggle
+                      on={active}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggle(opt.key);
+                      }}
+                      label={label}
+                    />
                   </div>
-                </Tooltip>
+                </div>
               );
             })}
           </div>
