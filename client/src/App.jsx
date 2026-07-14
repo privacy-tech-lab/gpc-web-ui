@@ -391,17 +391,23 @@ function App() {
     let base = rowRecords;
 
     if (chartFilters.selectedSeries && chartFilters.selectedSeries.length > 0) {
-      base = base.filter(({ row, schema }) => {
-        return chartFilters.selectedSeries.some((seriesKey) => {
-          if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
-          if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
-          if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
-          if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
-          if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
-          if (analysisMode === ANALYSIS_MODES.SCHEMA) return schema?.tokens?.includes(seriesKey);
-          return parseReasons(row?.Reasons_Non_Compliant).includes(seriesKey);
-        });
-      });
+      const matchesSeries = ({ row, schema }, seriesKey) => {
+        if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
+        if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
+        if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
+        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
+        if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
+        if (analysisMode === ANALYSIS_MODES.SCHEMA) return schema?.tokens?.includes(seriesKey);
+        return parseReasons(row?.Reasons_Non_Compliant).includes(seriesKey);
+      };
+      base =
+        viewMode === "table"
+          ? base.filter((record) =>
+              chartFilters.selectedSeries.every((seriesKey) => matchesSeries(record, seriesKey)),
+            )
+          : base.filter((record) =>
+              chartFilters.selectedSeries.some((seriesKey) => matchesSeries(record, seriesKey)),
+            );
     }
 
     const query = String(searchQuery || "").trim().toLowerCase();
@@ -409,7 +415,7 @@ function App() {
       base = base.filter(({ row }) => getRowSearchValue(row).includes(query));
     }
     return base;
-  }, [analysisMode, rowRecords, schemaModeUnavailable, searchQuery, chartFilters.selectedSeries]);
+  }, [analysisMode, rowRecords, schemaModeUnavailable, searchQuery, chartFilters.selectedSeries, viewMode]);
 
   const filteredRows = useMemo(() => filteredRecords.map((record) => record.row), [filteredRecords]);
 
