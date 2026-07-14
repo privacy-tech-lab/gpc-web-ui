@@ -39,7 +39,6 @@ ChartJS.register(
   ChartDataLabels
 );
 
-// --- New Results Constants ---
 const COMPLIANCE_SERIES = {
   DOES_NOT_HONOR: "Likely Does Not Honor GPC",
   HONORS: "Likely Honors GPC",
@@ -51,7 +50,6 @@ const COMPLIANCE_DESCRIPTIONS = {
   [COMPLIANCE_SERIES.HONORS]: "Sites whose compliance classification explicitly states that they likely honor GPC.",
   [COMPLIANCE_SERIES.NA_INVALID]: "Sites where GPC compliance could not be determined or is not applicable.",
 };
-// -----------------------------
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
   [SPECIAL_SERIES.PNC_SITES]:
@@ -110,29 +108,30 @@ async function parseCsv(publicCsvPath) {
   });
 }
 
-function getChartParam(key, fallback) {
-  if (typeof window === "undefined") return fallback;
-  return new URLSearchParams(window.location.search).get(key) ?? fallback;
-}
-
-function getChartArrayParam(key, fallback) {
-  if (typeof window === "undefined") return fallback;
-  const val = new URLSearchParams(window.location.search).get(key);
-  if (val) return val.split(",").map(s => s.trim()).filter(Boolean);
-  return fallback;
-}
-
-const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePeriods, stateMonths }) {
-  const [selectedSeries, setSelectedSeries] = useState(() => getChartArrayParam("cseries", []));
-  const [chartType, setChartType] = useState(() => getChartParam("ctype", "line"));
+const ReasonTrendsChart = memo(function ReasonTrendsChart({
+  viewMode,
+  setViewMode,
+  tableContent,
+  analysisMode,
+  timePeriods,
+  stateMonths,
+  selectedSeries,
+  setSelectedSeries,
+  selectedStates,
+  setSelectedStates,
+  chartType,
+  setChartType,
+  activeChart,
+  setActiveChart,
+  gppSection,
+  setCurrentPage,
+}) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToPncRows, setStateMonthToPncRows] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
   const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
-  const [schemaParseErrorCount, setSchemaParseErrorCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedStates, setSelectedStates] = useState(() => getChartArrayParam("cstates", ["CA"]));
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [reasonDescriptions, setReasonDescriptions] = useState({});
   const chartRef = useRef(null);
@@ -195,7 +194,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
 
   useEffect(() => {
     setSelectedSeries(prev => {
-      // Setup the defaults based on analysis mode
       if (analysisMode === ANALYSIS_MODES.SCHEMA) {
         const specials = prev.filter(k => k === COMPLIANCE_SERIES.DOES_NOT_HONOR || k === COMPLIANCE_SERIES.HONORS || k === COMPLIANCE_SERIES.NA_INVALID || k === SPECIAL_SERIES.NULL_SITES);
         return specials.length > 0 ? specials : [COMPLIANCE_SERIES.DOES_NOT_HONOR];
@@ -237,13 +235,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
                   row,
                   schema: getSchemaClassificationForRow(row),
                 }));
-                const parseErrors = hasSchemaColumn
-                  ? allRecords.reduce(
-                      (count, record) =>
-                        count + (record.schema.parseError ? 1 : 0),
-                      0
-                    )
-                  : 0;
 
                 const nullRows = allData.rows.filter(
                   (row) =>
@@ -256,7 +247,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
                   pncRows: pncData ? pncData.rows : null,
                   nullRows,
                   hasSchemaColumn,
-                  parseErrors,
                 };
               })
             );
@@ -339,9 +329,9 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
     selectedStates.forEach(s => selectedSeries.forEach(sk => {
       let c;
       if (sk === SPECIAL_SERIES.PNC_SITES) c = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
-      else if (sk === COMPLIANCE_SERIES.DOES_NOT_HONOR) c = "#ef4444"; // Red for Does Not Honor
-      else if (sk === COMPLIANCE_SERIES.HONORS) c = "#22c55e"; // Green for Honors
-      else if (sk === COMPLIANCE_SERIES.NA_INVALID) c = "#94a3b8"; // Slate Gray for NA/Invalid/Missing
+      else if (sk === COMPLIANCE_SERIES.DOES_NOT_HONOR) c = "#ef4444";
+      else if (sk === COMPLIANCE_SERIES.HONORS) c = "#22c55e";
+      else if (sk === COMPLIANCE_SERIES.NA_INVALID) c = "#94a3b8";
       else if (sk === SPECIAL_SERIES.NULL_SITES) c = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
       else {
         const statusKey = parseSchemaToken(sk)?.status ?? "__legacy";
@@ -384,13 +374,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
       }
 
       let data = unifiedMonthKeys.map(m => {
-        // Fallback for Legacy PNC Site option
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => isSchemaRowNonCompliant(r.schema)).length;
         }
 
-        // New Schema Results
         if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.DOES_NOT_HONOR).length;
@@ -497,43 +485,127 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({ analysisMode, timePe
 
   return (
     <div className="card card--padded section">
-      <h2>Track Compliance Evolution Over Time</h2>
-      <div className="toolbar">
-        <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <label htmlFor="chart-type-select">Chart Type:</label>
-          <select id="chart-type-select" value={chartType} onChange={e => setChartType(e.target.value)}>
-            <option value="line">Line Trend</option><option value="bar">Bar Comparison</option>
-          </select>
-        </div>
-        <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px", borderLeft: "1px solid #e2e8f0", paddingLeft: "16px", marginLeft: "4px" }}>
-          <span style={{ fontSize: "14px", fontWeight: "500", color: "#475569" }}>States:</span>
-          <div className="chip-group">
-            {AVAILABLE_STATES.map(s => {
-              const active = selectedStates.includes(s);
-              return <button key={s} className={`chip${active ? " chip--active" : ""}`} style={{ padding: "4px 12px", fontSize: "12px" }} onClick={() => setSelectedStates(prev => prev.includes(s) ? prev.filter(v => v !== s) : [...prev, s])}>{s}</button>;
-            })}
+      <div style={{ display: activeChart === "trends" || viewMode === "table" ? "block" : "none" }}>
+        <div style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}>
+
+          {/* LEFT SIDE: Holds structural content blocks */}
+          <div style={{ flex: "1", minWidth: 0 }}>
+            {viewMode === "graph" ? (
+              <>
+                <h2 className="section-title" style={{ marginTop: 0 }}>Track Compliance Evolution Over Time</h2>
+                <div className="toolbar" style={{ marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "16px" }}>
+                  <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div className="chip-group">
+                      <button
+                        className="chip"
+                        disabled={activeChart === "trends" && chartType === "line"}
+                        style={activeChart === "trends" && chartType === "line" ? { opacity: 0.55, cursor: "default" } : undefined}
+                        onClick={() => {
+                          setChartType("line");
+                          setActiveChart("trends");
+                        }}
+                      >
+                        Line
+                      </button>
+                      <button
+                        className="chip"
+                        disabled={activeChart === "trends" && chartType === "bar"}
+                        style={activeChart === "trends" && chartType === "bar" ? { opacity: 0.55, cursor: "default" } : undefined}
+                        onClick={() => {
+                          setChartType("bar");
+                          setActiveChart("trends");
+                        }}
+                      >
+                        Bar
+                      </button>
+                      <button
+                        className="chip"
+                        disabled={activeChart === "gpp"}
+                        style={activeChart === "gpp" ? { opacity: 0.55, cursor: "default" } : undefined}
+                        onClick={() => setActiveChart("gpp")}
+                      >
+                        GPP Breakdown
+                      </button>
+                    </div>
+                  </div>
+                  <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px", borderLeft: "1px solid #e2e8f0", paddingLeft: "16px" }}>
+                    <span style={{ fontSize: "14px", fontWeight: "500", color: "#475569" }}>States:</span>
+                    <div className="chip-group">
+                      {AVAILABLE_STATES.map(s => {
+                        const active = selectedStates.includes(s);
+                        return <button key={s} className={`chip${active ? " chip--active" : ""}`} style={{ padding: "4px 12px", fontSize: "12px" }} onClick={() => setSelectedStates(prev => prev.includes(s) ? prev.filter(v => v !== s) : [...prev, s])}>{s}</button>;
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {loading && <div style={{ padding: 8 }}>Loading chart data...</div>}
+                {error && <div style={{ padding: 8, color: "#b00020" }}>Error: {error}</div>}
+                {!loading && !error && selectedStates.length > 0 && (
+                  <>
+                    <div className="chart-area">
+                      {chartType === "line" ? <Line ref={chartRef} data={{ labels, datasets }} options={options} /> : <Bar ref={chartRef} data={{ labels, datasets }} options={options} />}
+                    </div>
+                    <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={showDataLabels}
+                          onChange={(e) => setShowDataLabels(e.target.checked)}
+                        />
+                        Show data labels
+                      </label>
+                      <button className="btn-download" onClick={handleDownload}>Download PNG</button>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              tableContent
+            )}
           </div>
+
+          {/* RIGHT SIDE: View Mode Selector + Filters raised to structural top boundary */}
+          <div style={{ flex: "0 0 320px" }}>
+            <div className="view-switcher" style={{ marginBottom: "16px" }}>
+              <div className="chip-group" style={{ display: "flex", width: "100%" }}>
+                <button
+                  type="button"
+                  className={`chip ${viewMode === "graph" ? "chip--active" : ""}`}
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={() => setViewMode("graph")}
+                >
+                  Graph View
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${viewMode === "table" ? "chip--active" : ""}`}
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={() => setViewMode("table")}
+                >
+                  Table View
+                </button>
+              </div>
+            </div>
+
+            <ChartSchemaFilterPanel
+              seriesOptions={seriesOptions}
+              selectedSeries={selectedSeries}
+              selectedStates={selectedStates}
+              onToggle={k => {
+                setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k]);
+                setCurrentPage?.(1);
+              }}
+              isSchemaMode={analysisMode === ANALYSIS_MODES.SCHEMA}
+            />
+          </div>
+
         </div>
       </div>
-      <ChartSchemaFilterPanel seriesOptions={seriesOptions} selectedSeries={selectedSeries} selectedStates={selectedStates} onToggle={k => setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k])} isSchemaMode={analysisMode === ANALYSIS_MODES.SCHEMA} />
-      {loading && <div style={{ padding: 8 }}>Loading chart data...</div>}
-      {error && <div style={{ padding: 8, color: "#b00020" }}>Error: {error}</div>}
-      {!loading && !error && selectedStates.length > 0 && (
-        <>
-          <div className="chart-area">{chartType === "line" ? <Line ref={chartRef} data={{ labels, datasets }} options={options} /> : <Bar ref={chartRef} data={{ labels, datasets }} options={options} />}</div>
-          <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showDataLabels}
-                onChange={(e) => setShowDataLabels(e.target.checked)}
-              />
-              Show data labels
-            </label>
-            <button className="btn-download" onClick={handleDownload}>Download PNG</button>
-          </div>
-        </>
-      )}
+
+      <div style={{ display: activeChart === "gpp" && viewMode === "graph" ? "block" : "none", marginTop: "15px" }}>
+        {gppSection}
+      </div>
     </div>
   );
 });
