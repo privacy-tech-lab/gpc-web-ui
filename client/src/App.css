@@ -111,22 +111,6 @@ a:hover {
   gap: 8px;
 }
 
-.mode-toolbar {
-  max-width: 1200px;
-  margin: 0 auto 16px;
-}
-
-.mode-toolbar__inner {
-  margin: 0;
-  max-width: none;
-  justify-content: flex-start;
-}
-
-.mode-toolbar__hint {
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-
 .controls label {
   font-weight: 500;
   margin-right: 5px;
@@ -511,7 +495,7 @@ tbody tr:hover td.col-sticky {
 /* Unified into general Tooltip Styles */
 
 .chart-area {
-  height: 500px;
+  height: 400px;
 }
 
 /* ---------------------------
@@ -638,10 +622,6 @@ tbody tr:hover td.col-sticky {
   .toolbar button,
   .toolbar input[type="text"] {
     width: 100%;
-  }
-
-  .mode-toolbar__inner {
-    align-items: stretch;
   }
 
   .kpis {
@@ -864,7 +844,7 @@ tbody tr:hover td.col-sticky {
   background: #f8fafc;
   border: 2px solid #e2e8f0;
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 12px 10px;
   transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 
@@ -1249,20 +1229,11 @@ tbody tr:hover td.col-sticky {
   border-radius: 8px 8px 0 0;
 }
 
-/* ── Legacy flat chips ── */
-.csfp__legacy-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-
-
 /* ---------------------------
-   Chart Schema Global Styles 
+   Chart Schema Global Styles
    --------------------------- */
 .csfp__specials-section {
-  padding: 16px 20px 0;
+  padding: 16px 12px 0;
 }
 
 .csfp__section-title {
@@ -1332,44 +1303,134 @@ tbody tr:hover td.col-sticky {
 }
 
 /* ---------------------------
-     Settings Toggle
+     Side Navigation
   --------------------------- */
-.settings-toggle {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: white;
-  border: 1px solid #e2e8f0;
+:root {
+  --side-nav-collapsed: 60px;
+  --side-nav-expanded: 240px;
+}
+
+body {
+  padding-left: var(--side-nav-collapsed);
+}
+
+.side-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: var(--side-nav-collapsed);
+  background: var(--surface);
+  border-right: 1px solid #eee;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  z-index: 40;
+  overflow: hidden;
+  transition: width 0.18s ease-out, box-shadow 0.18s ease-out;
+  display: flex;
+  flex-direction: column;
+  padding-top: 16px;
+}
+
+.side-nav--expanded {
+  width: var(--side-nav-expanded);
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.12);
+}
+
+.side-nav__toggle {
+  align-self: flex-start;
+  margin: 0 0 12px 18px;
+  background: none;
+  border: none;
+  color: var(--muted);
   cursor: pointer;
-  color: #64748b;
-  padding: 8px;
-  border-radius: 8px;
-  transition: all 0.2s;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.side-nav--expanded .side-nav__toggle {
+  color: var(--brand);
+}
+
+.side-nav__toggle:hover {
+  background: var(--bg);
+}
+
+.side-nav__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+}
+
+.side-nav--expanded .side-nav__list {
+  display: flex;
+}
+
+.side-nav__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.side-nav__item:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.side-nav__item:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.side-nav__item[aria-current="true"] {
+  color: var(--brand-dark);
+  border-left-color: var(--brand);
+  background: rgba(46, 125, 50, 0.08);
+}
+
+.side-nav__icon {
+  flex: 0 0 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  z-index: 10;
 }
 
-.settings-toggle:hover {
-  background: #f8fafc;
-  color: #1a202c;
-  border-color: #cbd5e0;
+.side-nav__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
-.settings-toggle--active {
-  background: #f1f5f9;
-  color: var(--brand);
-  border-color: var(--brand);
+.side-nav__label {
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.settings-panel {
-  margin-bottom: 24px;
-  animation: slideDown 0.2s ease-out;
+.side-nav__desc {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: normal;
+  line-height: 1.3;
 }
 
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+@media screen and (max-width: 1000px) {
+  .side-nav {
+    display: none;
+  }
+  body {
+    padding-left: 0;
+  }
 }

@@ -6,12 +6,10 @@ import SchemaFilterPanel from "./SchemaFilterPanel.jsx";
 /**
  * ChartSchemaFilterPanel
  *
- * Redesigned "Chart Schema Filters" for ReasonTrendsChart.
- * Shows:
+ * "Chart Schema Filters" for ReasonTrendsChart. Shows:
  * - A "Quick Series" section for the special/overview cards
  * (Potentially Non-Compliant Sites, Null Sites, and Top-Level Compliance Results)
- * - In schema mode: the full hierarchical SchemaFilterPanel for token-level chart series
- * - In legacy mode: the flat reason chip grid (unchanged from before)
+ * - The full hierarchical SchemaFilterPanel for token-level chart series
  */
 
 const SPECIAL_KEYS = new Set([
@@ -41,33 +39,21 @@ export default function ChartSchemaFilterPanel({
   selectedSeries,
   selectedStates,
   onToggle,
-  isSchemaMode,
 }) {
   const selectedSet = useMemo(
     () => new Set(selectedSeries),
     [selectedSeries]
   );
 
-  // Split options into special chips vs schema tokens vs legacy reasons
+  // Split options into special chips vs schema tokens
   const specialOptions = useMemo(
     () => seriesOptions.filter((o) => SPECIAL_KEYS.has(o.key)),
     [seriesOptions]
   );
 
   const schemaTokenOptions = useMemo(
-    () =>
-      isSchemaMode
-        ? seriesOptions.filter((o) => !SPECIAL_KEYS.has(o.key) && parseSchemaToken(o.key))
-        : [],
-    [seriesOptions, isSchemaMode]
-  );
-
-  const legacyOptions = useMemo(
-    () =>
-      !isSchemaMode
-        ? seriesOptions.filter((o) => !SPECIAL_KEYS.has(o.key))
-        : [],
-    [seriesOptions, isSchemaMode]
+    () => seriesOptions.filter((o) => !SPECIAL_KEYS.has(o.key) && parseSchemaToken(o.key)),
+    [seriesOptions]
   );
 
   // Build schemaFilterMeta shape for SchemaFilterPanel
@@ -106,15 +92,14 @@ export default function ChartSchemaFilterPanel({
       {/* ── Header / global controls ── */}
       <div className="csfp__header">
         <strong className="csfp__title">
-          {isSchemaMode ? "Chart Filters" : "Chart Reason Filters"}
+          Chart Filters
         </strong>
       </div>
 
-      {/* ── Special / overview cards stacked vertically ── */}
+      {/* ── Special / overview cards, responsive grid ── */}
       {specialOptions.length > 0 && (
         <div className="csfp__specials-section" style={{ padding: "8px 0 16px" }}>
-          {/* Forces cards to stack vertically and stretch full width */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "10px" }}>
             {specialOptions.map((opt) => {
               const active = selectedSet.has(opt.key);
               
@@ -137,7 +122,7 @@ export default function ChartSchemaFilterPanel({
                   <div className="sfp__family-header">
                     {/* Tooltip isolated safely inside the text item layout wrapper */}
                     <Tooltip content={opt.description} position="top">
-                      <span className="sfp__family-label">
+                      <span className="sfp__family-label" style={{ whiteSpace: "nowrap" }}>
                         {icon} {label}
                       </span>
                     </Tooltip>
@@ -157,8 +142,8 @@ export default function ChartSchemaFilterPanel({
         </div>
       )}
 
-      {/* ── Schema-mode: hierarchical token filter ── */}
-      {isSchemaMode && schemaFilterMeta.tokens.length > 0 && (
+      {/* ── Hierarchical token filter ── */}
+      {schemaFilterMeta.tokens.length > 0 && (
         <div className="csfp__schema-panel">
           <SchemaFilterPanel
             schemaFilterMeta={schemaFilterMeta}
@@ -166,25 +151,6 @@ export default function ChartSchemaFilterPanel({
             geoStates={selectedStates}
             onChange={handleSchemaTokenChange}
           />
-        </div>
-      )}
-
-      {/* ── Legacy mode: flat reason chips ── */}
-      {!isSchemaMode && legacyOptions.length > 0 && (
-        <div className="csfp__legacy-chips">
-          {legacyOptions.map((opt) => {
-            const active = selectedSet.has(opt.key);
-            return (
-              <Tooltip key={opt.key} content={opt.description} position="top">
-                <button
-                  className={`chip${active ? " chip--active" : ""}`}
-                  onClick={() => onToggle(opt.key)}
-                >
-                  {opt.label}
-                </button>
-              </Tooltip>
-            );
-          })}
         </div>
       )}
     </div>

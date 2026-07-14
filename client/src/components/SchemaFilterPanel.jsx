@@ -394,7 +394,7 @@ export default function SchemaFilterPanel({
   if (tokens.length === 0) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px", alignItems: "start" }}>
       {FAMILY_CONFIG.map(({ key, label, icon }) => {
         const ft = familyTokens(tokens, key);
         if (ft.length === 0) return null;

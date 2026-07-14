@@ -17,13 +17,12 @@ import ChartDataLabels from "chartjs-plugin-datalabels";
 import Tooltip from "./components/Tooltip";
 import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
 import {
-  ANALYSIS_MODES,
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
   isSchemaRowNonCompliant,
   sortSchemaTokens,
   parseSchemaToken,
-} 
+}
 from "./utils/schemaClassification.js";
 import { STATUS_COLOR_PALETTES, LEGACY_COLOR_PALETTE, SPECIAL_SERIES, getColorForSeries } from "./utils/colorPalettes.js";
 
@@ -58,29 +57,7 @@ const SPECIAL_SERIES_DESCRIPTIONS = {
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
 
-const PNC_REASON_LIST = [
-  "Invalid_uspapi", "Invalid_usp_cookies", "uspapi", "usp_cookies",
-  "MissingAfter_uspapi", "MissingAfter_usp_cookies", "Invalid_GPPString",
-  "SaleOptOut_USNAT", "SharingOptOut_USNAT", "TargetedAdvertisingOptOut_USNAT",
-  "SaleOptOut_State", "SharingOptOut_State", "TargetedAdvertisingOptOut_State",
-  "MissingAfterGPPString", "Invalid_OptanonConsent", "OptanonConsent",
-  "MissingAfterOptanonConsent", "Well-Known", "Invalid_Well-Known", "SegmentSwitchGPP",
-];
-
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
-
-function parseReasons(value) {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.map(i => String(i).trim()).filter(Boolean);
-  const str = String(value).trim();
-  const jsonLike = str.replace(/^\s*\[\s*/, "[").replace(/\s*\]\s*$/, "]")
-    .replace(/'\s*,\s*'/g, '","').replace(/^\['/, '["').replace(/'\]$/, '"]').replace(/'/g, '"');
-  try {
-    const parsed = JSON.parse(jsonLike);
-    if (Array.isArray(parsed)) return parsed.map(i => String(i).trim()).filter(Boolean);
-  } catch {}
-  return str.replace(/^\[|\]$/g, "").split(",").map(i => i.replace(/^[\s'"]+|[\s'"]+$/g, "").trim()).filter(Boolean);
-}
 
 function normalizeRow(row) {
   const normalized = {};
@@ -112,7 +89,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   viewMode,
   setViewMode,
   tableContent,
-  analysisMode,
   timePeriods,
   stateMonths,
   selectedSeries,
@@ -127,20 +103,18 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   setCurrentPage,
 }) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
-  const [stateMonthToPncRows, setStateMonthToPncRows] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
   const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDataLabels, setShowDataLabels] = useState(false);
-  const [reasonDescriptions, setReasonDescriptions] = useState({});
   const chartRef = useRef(null);
 
   useEffect(() => {
     if (chartRef.current) {
       chartRef.current._isolatedIndices = null;
     }
-  }, [selectedSeries, selectedStates, analysisMode, chartType]);
+  }, [selectedSeries, selectedStates, chartType]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -176,7 +150,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
 
     const url = newCanvas.toDataURL("image/png", 1);
     const a = document.createElement("a"); a.href = url;
-    a.download = `Trend_${analysisMode}_${selectedStates.join("_")}.png`;
+    a.download = `Trend_${selectedStates.join("_")}.png`;
     a.click();
 
     chart.data.datasets = originalDatasets;
@@ -184,25 +158,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   }
 
   useEffect(() => {
-    let cancelled = false;
-    fetch("/classifications_of_compliance.json")
-      .then(res => res.ok ? res.json() : Promise.reject(new Error("Failed to load")))
-      .then(data => { if (!cancelled) setReasonDescriptions(data); })
-      .catch(err => console.warn(err));
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
     setSelectedSeries(prev => {
-      if (analysisMode === ANALYSIS_MODES.SCHEMA) {
-        const specials = prev.filter(k => k === COMPLIANCE_SERIES.DOES_NOT_HONOR || k === COMPLIANCE_SERIES.HONORS || k === COMPLIANCE_SERIES.NA_INVALID || k === SPECIAL_SERIES.NULL_SITES);
-        return specials.length > 0 ? specials : [COMPLIANCE_SERIES.DOES_NOT_HONOR];
-      } else {
-        const specials = prev.filter(k => k === SPECIAL_SERIES.PNC_SITES || k === SPECIAL_SERIES.NULL_SITES);
-        return specials.length > 0 ? specials : [SPECIAL_SERIES.PNC_SITES];
-      }
+      const specials = prev.filter(k => k === COMPLIANCE_SERIES.DOES_NOT_HONOR || k === COMPLIANCE_SERIES.HONORS || k === COMPLIANCE_SERIES.NA_INVALID || k === SPECIAL_SERIES.NULL_SITES);
+      return specials.length > 0 ? specials : [COMPLIANCE_SERIES.DOES_NOT_HONOR];
     });
-  }, [analysisMode]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,7 +171,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       try {
         const states = Array.isArray(selectedStates) ? selectedStates : [];
         if (states.length === 0) {
-          setStateMonthToAllRecords({}); setStateMonthToPncRows({}); setStateMonthToNullRows({}); setStateMonthToSchemaAvailability({});
+          setStateMonthToAllRecords({}); setStateMonthToNullRows({}); setStateMonthToSchemaAvailability({});
           setLoading(false); return;
         }
 
@@ -221,12 +181,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             const monthResults = await Promise.all(
               monthKeys.map(async (monthKey) => {
                 const allPath = `/${stateCode}/Crawl_Data_${stateCode} - ${monthKey}.csv`;
-                const pncPath = `/${stateCode}/Crawl_Data_${stateCode} - PotentiallyNonCompliantSites${monthKey}.csv`;
 
-                const [allData, pncData] = await Promise.all([
-                  parseCsv(allPath),
-                  parseCsv(pncPath).catch(() => null),
-                ]);
+                const allData = await parseCsv(allPath);
 
                 const hasSchemaColumn = allData.headers.includes(
                   SCHEMA_CLASSIFICATION_COLUMN
@@ -244,7 +200,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 return {
                   key: monthKey,
                   allRecords,
-                  pncRows: pncData ? pncData.rows : null,
                   nullRows,
                   hasSchemaColumn,
                 };
@@ -256,15 +211,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         );
 
         if (cancelled) return;
-        const nextAll = {}; const nextPnc = {}; const nextNull = {}; const nextAvail = {};
+        const nextAll = {}; const nextNull = {}; const nextAvail = {};
         perStateResults.forEach(({ stateCode, monthResults }) => {
-          nextAll[stateCode] = {}; nextPnc[stateCode] = {}; nextNull[stateCode] = {}; nextAvail[stateCode] = {};
+          nextAll[stateCode] = {}; nextNull[stateCode] = {}; nextAvail[stateCode] = {};
           monthResults.forEach(m => {
-            nextAll[stateCode][m.key] = m.allRecords; nextPnc[stateCode][m.key] = m.pncRows;
+            nextAll[stateCode][m.key] = m.allRecords;
             nextNull[stateCode][m.key] = m.nullRows; nextAvail[stateCode][m.key] = m.hasSchemaColumn;
           });
         });
-        setStateMonthToAllRecords(nextAll); setStateMonthToPncRows(nextPnc); setStateMonthToNullRows(nextNull); setStateMonthToSchemaAvailability(nextAvail);
+        setStateMonthToAllRecords(nextAll); setStateMonthToNullRows(nextNull); setStateMonthToSchemaAvailability(nextAvail);
       } catch (err) { if (!cancelled) setError(err.message); } finally { if (!cancelled) setLoading(false); }
     }
     loadSelectedStates(); return () => { cancelled = true; };
@@ -293,21 +248,14 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   }, [selectedStates, stateMonthToAllRecords, unifiedMonthKeys]);
 
   const seriesOptions = useMemo(() => {
-    if (analysisMode === ANALYSIS_MODES.SCHEMA) {
-      const baseSchema = [
-        { key: COMPLIANCE_SERIES.DOES_NOT_HONOR, label: COMPLIANCE_SERIES.DOES_NOT_HONOR, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.DOES_NOT_HONOR] },
-        { key: COMPLIANCE_SERIES.HONORS, label: COMPLIANCE_SERIES.HONORS, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.HONORS] },
-        { key: COMPLIANCE_SERIES.NA_INVALID, label: COMPLIANCE_SERIES.NA_INVALID, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NA_INVALID] },
-        { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
-      ];
-      return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
-    }
-    const baseLegacy = [
-      { key: SPECIAL_SERIES.PNC_SITES, label: SPECIAL_SERIES.PNC_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.PNC_SITES] },
+    const baseSchema = [
+      { key: COMPLIANCE_SERIES.DOES_NOT_HONOR, label: COMPLIANCE_SERIES.DOES_NOT_HONOR, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.DOES_NOT_HONOR] },
+      { key: COMPLIANCE_SERIES.HONORS, label: COMPLIANCE_SERIES.HONORS, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.HONORS] },
+      { key: COMPLIANCE_SERIES.NA_INVALID, label: COMPLIANCE_SERIES.NA_INVALID, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NA_INVALID] },
       { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
     ];
-    return [...baseLegacy, ...PNC_REASON_LIST.map(r => ({ key: r, label: r, description: reasonDescriptions[r] || "" }))];
-  }, [analysisMode, reasonDescriptions, schemaSeriesMeta]);
+    return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
+  }, [schemaSeriesMeta]);
 
   function shadeHex(hex, percent) {
     if (!hex || hex[0] !== "#") return hex;
@@ -393,11 +341,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         }
 
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;
-        if (analysisMode === ANALYSIS_MODES.SCHEMA) {
-          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
-          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
-        }
-        return (stateMonthToPncRows[stateCode]?.[m] || []).filter(r => parseReasons(r.Reasons_Non_Compliant).includes(seriesKey)).length;
+        if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+        return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
       });
       allDatasets.push({
         label: `${stateCode} - ${seriesOptions.find(o => o.key === seriesKey)?.label || seriesKey}`,
@@ -408,7 +353,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       });
     }));
     return allDatasets;
-  }, [analysisMode, chartType, selectedSeries, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToPncRows, stateMonthToSchemaAvailability, unifiedMonthKeys]);
+  }, [chartType, selectedSeries, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys]);
 
   const options = useMemo(() => ({
     responsive: true, maintainAspectRatio: false, normalized: true, customType: chartType,
@@ -475,20 +420,20 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: "circle", padding: 12, font: { size: 11, family: "'Segoe UI', sans-serif", weight: "500" }, color: "#475569" },
       },
       tooltip: { mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12, titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true },
-      title: { display: true, text: analysisMode === ANALYSIS_MODES.SCHEMA ? "Schema classification trends over months" : "Reason trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
+      title: { display: true, text: "Schema classification trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
     },
     scales: {
       y: { beginAtZero: true, grid: { color: "rgba(0, 0, 0, 0.05)", drawBorder: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Number of Sites", font: { size: 12, weight: "600" }, color: "#475569" } },
       x: { grid: { display: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Month", font: { size: 12, weight: "600" }, color: "#475569" } },
     },
-  }), [analysisMode, chartType, showDataLabels]);
+  }), [chartType, showDataLabels]);
 
   return (
     <div className="card card--padded section">
-      <div style={{ display: activeChart === "trends" || viewMode === "table" ? "block" : "none" }}>
+      <div id="section-trends" style={{ display: activeChart === "trends" || viewMode === "table" ? "block" : "none" }}>
         <div style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}>
 
-          {/* LEFT SIDE: Holds structural content blocks */}
+          {/* LEFT SIDE: chart/table content */}
           <div style={{ flex: "1", minWidth: 0 }}>
             {viewMode === "graph" ? (
               <>
@@ -517,14 +462,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                         }}
                       >
                         Bar
-                      </button>
-                      <button
-                        className="chip"
-                        disabled={activeChart === "gpp"}
-                        style={activeChart === "gpp" ? { opacity: 0.55, cursor: "default" } : undefined}
-                        onClick={() => setActiveChart("gpp")}
-                      >
-                        GPP Breakdown
                       </button>
                     </div>
                   </div>
@@ -565,8 +502,18 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             )}
           </div>
 
-          {/* RIGHT SIDE: View Mode Selector + Filters raised to structural top boundary */}
-          <div style={{ flex: "0 0 320px" }}>
+          {/* RIGHT SIDE: View Mode Selector + Filters. Sticky + independently
+              scrollable so a tall filter list doesn't add page height beyond
+              what the chart/table itself needs. */}
+          <div
+            style={{
+              flex: "0 0 350px",
+              position: "sticky",
+              top: "20px",
+              maxHeight: "calc(100vh - 40px)",
+              overflowY: "auto",
+            }}
+          >
             <div className="view-switcher" style={{ marginBottom: "16px" }}>
               <div className="chip-group" style={{ display: "flex", width: "100%" }}>
                 <button
@@ -596,14 +543,13 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k]);
                 setCurrentPage?.(1);
               }}
-              isSchemaMode={analysisMode === ANALYSIS_MODES.SCHEMA}
             />
           </div>
 
         </div>
       </div>
 
-      <div style={{ display: activeChart === "gpp" && viewMode === "graph" ? "block" : "none", marginTop: "15px" }}>
+      <div id="section-gpp" style={{ display: activeChart === "gpp" && viewMode === "graph" ? "block" : "none", marginTop: "15px" }}>
         {gppSection}
       </div>
     </div>
