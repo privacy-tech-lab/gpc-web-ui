@@ -3,9 +3,15 @@ import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 
+/*
 const GppSectionBreakdownChart = lazy(
   () => import("./components/GppSectionBreakdownChart.jsx"),
 );
+*/
+const BeforeAfterBreakdown = lazy(
+  () => import("./components/BeforeAfterBreakdown.jsx"),
+);
+
 
 // Renders children only once the wrapper scrolls within rootMargin of the
 // viewport. Used to defer the GPP breakdown chart (its own bundle + CSV
@@ -872,7 +878,7 @@ function App() {
                 </div>
               }
             >
-              <GppSectionBreakdownChart
+              <BeforeAfterBreakdown
                 timePeriods={TIME_PERIODS}
                 stateMonths={STATE_MONTHS}
               />
