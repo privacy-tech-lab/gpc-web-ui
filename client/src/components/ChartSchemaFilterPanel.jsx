@@ -39,6 +39,7 @@ export default function ChartSchemaFilterPanel({
   selectedSeries,
   selectedStates,
   onToggle,
+  viewMode,
 }) {
   const selectedSet = useMemo(
     () => new Set(selectedSeries),
@@ -92,7 +93,7 @@ export default function ChartSchemaFilterPanel({
       {/* ── Header / global controls ── */}
       <div className="csfp__header">
         <strong className="csfp__title">
-          Chart Filters
+          {viewMode === "table" ? "Table Filters" : "Chart Filters"}
         </strong>
       </div>
 

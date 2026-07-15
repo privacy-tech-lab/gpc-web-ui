@@ -87,7 +87,6 @@ async function parseCsv(publicCsvPath) {
 
 const ReasonTrendsChart = memo(function ReasonTrendsChart({
   viewMode,
-  setViewMode,
   tableContent,
   timePeriods,
   stateMonths,
@@ -502,9 +501,9 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             )}
           </div>
 
-          {/* RIGHT SIDE: View Mode Selector + Filters. Sticky + independently
-              scrollable so a tall filter list doesn't add page height beyond
-              what the chart/table itself needs. */}
+          {/* RIGHT SIDE: Filters. Sticky + independently scrollable so a tall
+              filter list doesn't add page height beyond what the chart/table
+              itself needs. */}
           <div
             style={{
               flex: "0 0 350px",
@@ -514,27 +513,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
               overflowY: "auto",
             }}
           >
-            <div className="view-switcher" style={{ marginBottom: "16px" }}>
-              <div className="chip-group" style={{ display: "flex", width: "100%" }}>
-                <button
-                  type="button"
-                  className={`chip ${viewMode === "graph" ? "chip--active" : ""}`}
-                  style={{ flex: 1, justifyContent: "center" }}
-                  onClick={() => setViewMode("graph")}
-                >
-                  Graph View
-                </button>
-                <button
-                  type="button"
-                  className={`chip ${viewMode === "table" ? "chip--active" : ""}`}
-                  style={{ flex: 1, justifyContent: "center" }}
-                  onClick={() => setViewMode("table")}
-                >
-                  Table View
-                </button>
-              </div>
-            </div>
-
             <ChartSchemaFilterPanel
               seriesOptions={seriesOptions}
               selectedSeries={selectedSeries}
@@ -543,6 +521,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k]);
                 setCurrentPage?.(1);
               }}
+              viewMode={viewMode}
             />
           </div>
 

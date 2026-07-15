@@ -231,7 +231,7 @@ function App() {
       case "table":
         setShowOverview(false);
         setViewMode("table");
-        setPendingScrollId("table-wrapper");
+        setPendingScrollId("page-top");
         break;
       default:
         break;
@@ -773,7 +773,7 @@ function App() {
         }
       `}</style>
 
-      <div className="hero-title-wrapper">
+      <div className="hero-title-wrapper" id="page-top">
         <h1 style={{ margin: 0 }}>GPC Compliance Data</h1>
       </div>
 
@@ -796,7 +796,6 @@ function App() {
       {!showOverview && (
       <ReasonTrendsChart
         viewMode={viewMode}
-        setViewMode={setViewMode}
         tableContent={tableContent}
         timePeriods={TIME_PERIODS}
         stateMonths={STATE_MONTHS}
