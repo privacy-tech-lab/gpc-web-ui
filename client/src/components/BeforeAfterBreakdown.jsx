@@ -76,7 +76,7 @@ const PRIVACY_FRAMEWORK_DECODERS = {
   // ── STRATEGY 1: GLOBAL PRIVACY PLATFORM (GPP) ──────────────────────────────
   GPP: {
     label: "Global Privacy Platform (GPP)",
-    fields: ["TargetedAdvertisingOptOut", "SaleOptOut", "SharingOptOut"],
+    fields: ["TargetedAdvertisingOptOut", "SaleOptOut", "SharingOptOut", "GPC-SubSection"],
     hasSections: true,
     parse: (row, timing, field, selectedState) => {
       /**
@@ -104,14 +104,24 @@ const PRIVACY_FRAMEWORK_DECODERS = {
         const sec = gppDict[sectionKey];
         if (!sec || typeof sec !== "object") continue;
         
-        const val = parseFloat(sec[field]);
-        if (isNaN(val)) continue;
-        
         let status;
-        if (val === 1.0) status = "opted_out";
-        else if (val === 2.0) status = "did_not_opt_out";
-        else if (val === 0.0) status = "not_applicable";
-        else continue;
+        if (field === "GPC-SubSection") {
+          const val = sec["Gpc"];
+          // Check for both boolean and string representations just to be safe
+          if (val === true || val === "True") status = "opted_out";
+          else if (val === false || val === "False") status = "did_not_opt_out";
+          else continue; 
+        } 
+        else {
+          // Standard numerical GPP logic
+          const val = parseFloat(sec[field]);
+          if (isNaN(val)) continue;
+          
+          if (val === 1.0) status = "opted_out";
+          else if (val === 2.0) status = "did_not_opt_out";
+          else if (val === 0.0) status = "not_applicable";
+          else continue;
+        }
         
         pairs.push([abbrev, status]);
       }
