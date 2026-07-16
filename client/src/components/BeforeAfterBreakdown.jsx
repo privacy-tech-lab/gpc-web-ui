@@ -378,7 +378,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   const [showInvalid, setShowInvalid] = useState(false);
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [splitBySections, setSplitBySections] = useState(false);
-  const applyFilter = true; // true makes it worky
+  const applyFilter = true; // true ensures consistency with Colab (Dec2023, Apr2024, Jun2024 are untested)
 
 
   // ── 5b. File Fetching Lifecycle Hooks ───────────────────────────────────────
@@ -516,33 +516,6 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     }
   }, [selectedFramework, selectedField, selectedPeriod, selectedState, splitBySections, showInvalid]);
 
-
-  function handleExportFiltered() {
-    if (filteredOutRows.length === 0) {
-      console.log("No sites were filtered out.");
-      return;
-    }
-
-    // 1. Log them to the console for quick inspection
-    console.log(`Filtered out ${filteredOutRows.length} sites:`);
-    console.table(filteredOutRows.map(r => ({ 
-      URL: r["Site URL"], 
-      ThirdPartyCount: r["third_party_count"] || r["Third_party_count"] 
-    })));
-
-    // 2. Convert the rejected JSON objects back to a CSV string
-    const csvString = Papa.unparse(filteredOutRows);
-
-    // 3. Create a downloadable file
-    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `Filtered_Out_Sites_${selectedState}_${selectedPeriod}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
 
   // ── 5d. Image Rendering & Snapshot Handlers ────────────────────────────────
   function handleDownload() {
@@ -824,14 +797,6 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
               Show data labels
             </label>
 
-            <button className="btn-download" onClick={handleExportFiltered}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z"/>
-                <path d="M4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm1.639-3.708 1.33.886 1.854-1.855a.25.25 0 0 1 .289-.047l1.888.974V8.5a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V8s1.54-1.274 1.639-1.208zM6.25 6a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5z"/>
-              </svg>
-              Export Dropped Sites (CSV)
-            </button>
-            
             <button className="btn-download" onClick={handleDownload}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z" />
