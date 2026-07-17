@@ -392,10 +392,15 @@ function App() {
     [rowRecords],
   );
 
-  const firstStickyColumn = useMemo(() => {
-    const columns = Array.isArray(visibleColumns) && visibleColumns.length > 0 ? visibleColumns : displayHeaders;
-    return columns.length > 0 ? columns[0] : undefined;
-  }, [visibleColumns, displayHeaders]);
+  // Keep the table's column order pinned to displayHeaders' natural order,
+  // regardless of the order columns were toggled off/on in the picker.
+  const visibleTableColumns = useMemo(() => {
+    if (!Array.isArray(visibleColumns) || visibleColumns.length === 0) return displayHeaders;
+    const visibleSet = new Set(visibleColumns);
+    return displayHeaders.filter((header) => visibleSet.has(header));
+  }, [displayHeaders, visibleColumns]);
+
+  const firstStickyColumn = visibleTableColumns.length > 0 ? visibleTableColumns[0] : undefined;
 
   const filteredRecords = useMemo(() => {
     if (schemaModeUnavailable) return [];
@@ -436,7 +441,6 @@ function App() {
   const endIndex = Math.min(startIndex + PAGE_SIZE, totalItems);
 
   const pageRows = useMemo(() => filteredRows.slice(startIndex, endIndex), [filteredRows, startIndex, endIndex]);
-  const visibleTableColumns = visibleColumns.length > 0 ? visibleColumns : displayHeaders;
 
   const handleExportFiltered = () => {
     try {
@@ -602,7 +606,7 @@ function App() {
                       setCurrentPage(1);
                     }}
                   />
-                  <span>{column}</span>
+                  <span>{headerFriendlyNames[column] || column}</span>
                 </label>
               );
             })}

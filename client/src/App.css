@@ -521,7 +521,9 @@ tbody tr:hover td.col-sticky {
 
 .column-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-auto-flow: column;
+  grid-template-rows: repeat(10, auto);
+  grid-auto-columns: minmax(200px, 1fr);
   gap: 8px;
 }
 
