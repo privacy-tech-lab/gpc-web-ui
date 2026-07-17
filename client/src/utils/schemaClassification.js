@@ -1,8 +1,3 @@
-export const ANALYSIS_MODES = Object.freeze({
-  LEGACY: "legacy",
-  SCHEMA: "schema",
-});
-
 // Updated to the new column name
 export const SCHEMA_CLASSIFICATION_COLUMN = "complianceClassification";
 
