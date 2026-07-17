@@ -294,70 +294,113 @@ function computeBySection(rows, frameworkKey, field, applyFilter, selectedState)
 // ==============================================================================
 
 function sectionShade(hex, idx, total) {
+  // ... (Keep your existing sectionShade function exactly as is) ...
   if (total <= 1 || idx === 0) return hex;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   const blend = Math.min(idx * 0.28, 0.72);
-  return (
-    "#" +
-    [r, g, b]
-      .map((c) => Math.round(c + (255 - c) * blend).toString(16).padStart(2, "0"))
-      .join("")
-  );
+  return "#" + [r, g, b].map((c) => Math.round(c + (255 - c) * blend).toString(16).padStart(2, "0")).join("");
 }
 
-function buildAggregatedChartData(beforeCounts, afterCounts, showInvalid) {
-  const order = showInvalid
-    ? STATUS_RENDER_ORDER
-    : STATUS_RENDER_ORDER.filter((s) => s !== "invalid_missing");
-
-  const datasets = order.flatMap((status) => {
-    const bv = beforeCounts[status] ?? 0;
-    const av = afterCounts[status] ?? 0;
-    if (bv === 0 && av === 0) return [];
-    return [{
+function buildAggregatedChartDataMulti(rows, periods, timePeriods, frameworkKey, field, applyFilter, selectedState, showInvalid) {
+  const labels = [];
+  const datasetsMap = {};
+  
+  const order = showInvalid ? STATUS_RENDER_ORDER : STATUS_RENDER_ORDER.filter((s) => s !== "invalid_missing");
+  order.forEach(status => {
+    datasetsMap[status] = {
       label: STATUS_LABELS[status],
-      data: [bv, av],
+      data: [],
       backgroundColor: STATUS_BASE_COLORS[status],
       borderColor: STATUS_BASE_COLORS[status],
       borderWidth: 0,
-    }];
+    };
   });
-  return { labels: ["Before GPC", "After GPC"], datasets };
+
+  periods.forEach(period => {
+    // 1. Isolate the rows for just this period and run the math engine
+    const periodRows = rows.filter(r => r._period === period);
+    const { beforeCounts, afterCounts } = computeAggregated(periodRows, frameworkKey, field, applyFilter, selectedState);
+    
+    // 2. Calculate 'n' for the label
+    const sumVisible = (counts) => Object.entries(counts).reduce((acc, [s, v]) => acc + (s === "invalid_missing" && !showInvalid ? 0 : v), 0);
+    const n = Math.max(sumVisible(beforeCounts), sumVisible(afterCounts));
+    const pLabel = timePeriods.find((t) => t.key === period)?.label ?? period;
+
+    // 3. Push the two new Y-axis labels
+    labels.push([`${pLabel}`, `Before GPC (n=${n.toLocaleString()})`]);
+    labels.push([`${pLabel}`, `After GPC (n=${n.toLocaleString()})`]);
+
+    // 4. Push the corresponding data points into the color buckets
+    order.forEach(status => {
+      datasetsMap[status].data.push(beforeCounts[status] ?? 0);
+      datasetsMap[status].data.push(afterCounts[status] ?? 0);
+    });
+  });
+
+  return { labels, datasets: Object.values(datasetsMap).filter(ds => ds.data.some(v => v > 0)) };
 }
 
-function buildSectionChartData(beforeByCombo, afterByCombo, showInvalid) {
-  const allCombos = new Set([
-    ...Object.keys(beforeByCombo),
-    ...Object.keys(afterByCombo),
-  ]);
-  const singles = SECTION_ORDER.filter((s) => allCombos.has(s));
-  const multis = [...allCombos].filter((c) => c.includes(" & ")).sort();
-  const orderedCombos = [...singles, ...multis];
+function buildSectionChartDataMulti(rows, periods, timePeriods, frameworkKey, field, applyFilter, selectedState, showInvalid) {
+  // Similar architecture to above, but handling the regional combo loops
+  const labels = [];
+  const datasetsMap = {};
+  
+  const order = showInvalid ? STATUS_RENDER_ORDER : STATUS_RENDER_ORDER.filter((s) => s !== "invalid_missing");
+  
+  // First pass: Calculate all data to find all possible combos across all periods
+  const allCombos = new Set();
+  const periodResults = periods.map(period => {
+    const periodRows = rows.filter(r => r._period === period);
+    const result = computeBySection(periodRows, frameworkKey, field, applyFilter, selectedState);
+    Object.keys(result.beforeByCombo).forEach(c => allCombos.add(c));
+    Object.keys(result.afterByCombo).forEach(c => allCombos.add(c));
+    return { period, ...result };
+  });
 
-  const order = showInvalid
-    ? STATUS_RENDER_ORDER
-    : STATUS_RENDER_ORDER.filter((s) => s !== "invalid_missing");
+  const orderedCombos = [
+    ...SECTION_ORDER.filter((s) => allCombos.has(s)),
+    ...[...allCombos].filter((c) => c.includes(" & ")).sort()
+  ];
 
-  const datasets = [];
-  for (const status of order) {
+  // Initialize dataset buckets for every combo + status pairing
+  order.forEach(status => {
     orderedCombos.forEach((combo, idx) => {
-      const bv = beforeByCombo[combo]?.[status] ?? 0;
-      const av = afterByCombo[combo]?.[status] ?? 0;
-      if (bv === 0 && av === 0) return;
       const isMulti = combo.includes(" & ");
       const color = sectionShade(STATUS_BASE_COLORS[status], idx, orderedCombos.length);
-      datasets.push({
+      const key = `${combo}_${status}`;
+      datasetsMap[key] = {
         label: `${combo} — ${STATUS_LABELS[status]}`,
-        data: [bv, av],
+        data: [],
         backgroundColor: color,
         borderColor: isMulti ? "rgba(0,0,0,0.35)" : color,
         borderWidth: isMulti ? 1 : 0,
+      };
+    });
+  });
+
+  periodResults.forEach(({ period, beforeByCombo, afterByCombo }) => {
+    const sumVisible = (counts) => Object.entries(counts).reduce((acc, [s, v]) => acc + (s === "invalid_missing" && !showInvalid ? 0 : v), 0);
+    let beforeN = 0, afterN = 0;
+    Object.values(beforeByCombo).forEach(c => beforeN += sumVisible(c));
+    Object.values(afterByCombo).forEach(c => afterN += sumVisible(c));
+    const n = Math.max(beforeN, afterN);
+
+    const pLabel = timePeriods.find((t) => t.key === period)?.label ?? period;
+    labels.push([`${pLabel}`, `Before GPC (n=${n.toLocaleString()})`]);
+    labels.push([`${pLabel}`, `After GPC (n=${n.toLocaleString()})`]);
+
+    order.forEach(status => {
+      orderedCombos.forEach(combo => {
+        const key = `${combo}_${status}`;
+        datasetsMap[key].data.push(beforeByCombo[combo]?.[status] ?? 0);
+        datasetsMap[key].data.push(afterByCombo[combo]?.[status] ?? 0);
       });
     });
-  }
-  return { labels: ["Before GPC", "After GPC"], datasets };
+  });
+
+  return { labels, datasets: Object.values(datasetsMap).filter(ds => ds.data.some(v => v > 0)) };
 }
 
 
@@ -372,7 +415,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   
   const [selectedFramework, setSelectedFramework] = useState("GPP");
   const [selectedState, setSelectedState] = useState(availableStates[0] ?? "CA");
-  const [selectedPeriod, setSelectedPeriod] = useState("");
+  const [selectedPeriods, setSelectedPeriods] = useState([]);
   const [selectedField, setSelectedField] = useState("TargetedAdvertisingOptOut");
   
   const [showInvalid, setShowInvalid] = useState(false);
@@ -382,66 +425,56 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
 
 
   // ── 5b. File Fetching Lifecycle Hooks ───────────────────────────────────────
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const chartRef = useRef(null);
 
-  // Grab all rows that were successfully added but FAILED the subject filter
-  const filteredOutRows = useMemo(() => {
-    const added = rows.filter(isAdded);
-    return added.filter((row) => !isSubjectOrLikely(row));
-  }, [rows]);
-
-  // Sync supported field selection lists when the active layout framework changes
+  // Dynamic concurrent CSV fetching
   useEffect(() => {
-    const frameworkFields = PRIVACY_FRAMEWORK_DECODERS[selectedFramework].fields;
-    setSelectedField(frameworkFields[0]);
-    
-    // Automatically disable "split sections" checkbox if the active standard doesn't support them
-    if (!PRIVACY_FRAMEWORK_DECODERS[selectedFramework].hasSections) {
-      setSplitBySections(false);
-    }
-  }, [selectedFramework]);
-
-  // Sync available time periods when state selection moves
-  useEffect(() => {
-    const periods = stateMonths[selectedState] ?? [];
-    if (periods.length > 0 && !periods.includes(selectedPeriod)) {
-      setSelectedPeriod(periods[periods.length - 1]);
-    }
-  }, [selectedState, stateMonths]);
-
-  // Dynamic AJAX parser loading target CSV data targets
-  useEffect(() => {
-    if (!selectedState || !selectedPeriod) {
+    if (!selectedState || selectedPeriods.length === 0) {
+      setRows([]);
       setLoading(false);
       return;
     }
+    
     setLoading(true);
     setLoadError("");
-    const path = `/${selectedState}/Crawl_Data_${selectedState} - ${selectedPeriod}.csv`;
-    Papa.parse(path, {
-      download: true,
-      header: true,
-      skipEmptyLines: true,
-      complete: ({ data }) => {
-        setRows(
-          data.map((row) => {
-            const out = {};
-            Object.keys(row ?? {}).forEach((k) => { out[String(k).trim()] = row[k]; });
-            return out;
-          })
-        );
+
+    // Create a fetch promise for a single period
+    const fetchPeriod = (period) => {
+      return new Promise((resolve, reject) => {
+        const path = `/${selectedState}/Crawl_Data_${selectedState} - ${period}.csv`;
+        Papa.parse(path, {
+          download: true,
+          header: true,
+          skipEmptyLines: true,
+          complete: ({ data }) => {
+            // Tag each row with '_period' so we can group them during tallying
+            const taggedData = data.map((row) => {
+              const out = { _period: period }; 
+              Object.keys(row ?? {}).forEach((k) => { out[String(k).trim()] = row[k]; });
+              return out;
+            });
+            resolve(taggedData);
+          },
+          error: (err) => reject(new Error(`${period}: ${err.message}`))
+        });
+      });
+    };
+
+    // Execute all fetches concurrently and flatten the results into one master array
+    Promise.all(selectedPeriods.map(fetchPeriod))
+      .then((results) => {
+        setRows(results.flat());
         setLoading(false);
-      },
-      error: (err) => {
+      })
+      .catch((err) => {
         setLoadError(`Failed to load data: ${err.message}`);
         setLoading(false);
-      },
-    });
-  }, [selectedState, selectedPeriod]);
-
+      });
+  }, [selectedState, selectedPeriods]);
 
   // ── 5c. Tally Computation Selectors ────────────────────────────────────────
   
@@ -461,16 +494,18 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     [rows, selectedFramework, selectedField, applyFilter, splitBySections, selectedState]
   );
 
-  // Structural compiling pipelines building final UI Data formats
   const chartData = useMemo(() => {
-    const data = splitBySections
-      ? buildSectionChartData(beforeByCombo, afterByCombo, showInvalid)
-      : buildAggregatedChartData(beforeCounts, afterCounts, showInvalid);
+    if (selectedPeriods.length === 0 || rows.length === 0) return { labels: [], datasets: [] };
 
-    const visibilityMap = [{}, {}]; 
+    const data = splitBySections
+      ? buildSectionChartDataMulti(rows, selectedPeriods, timePeriods, selectedFramework, selectedField, applyFilter, selectedState, showInvalid)
+      : buildAggregatedChartDataMulti(rows, selectedPeriods, timePeriods, selectedFramework, selectedField, applyFilter, selectedState, showInvalid);
+
+    // Dynamic border radiuses for visually pleasing stacked bar ends
+    const visibilityMap = Array.from({ length: selectedPeriods.length * 2 }, () => ({})); 
     data.datasets.forEach((ds, dsIdx) => {
-      [0, 1].forEach((dataIdx) => {
-        if (ds.data[dataIdx] > 0) {
+      ds.data.forEach((val, dataIdx) => {
+        if (val > 0) {
           if (visibilityMap[dataIdx].first === undefined) visibilityMap[dataIdx].first = dsIdx;
           visibilityMap[dataIdx].last = dsIdx;
         }
@@ -491,30 +526,12 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     });
 
     return data;
-  }, [splitBySections, beforeCounts, afterCounts, beforeByCombo, afterByCombo, showInvalid]);
-
-  const chartN = useMemo(() => {
-    const sumVisible = (counts) =>
-      Object.entries(counts).reduce(
-        (acc, [status, v]) => acc + (status === "invalid_missing" && !showInvalid ? 0 : v),
-        0
-      );
-    if (splitBySections) {
-      let before = 0;
-      let after = 0;
-      for (const c of Object.values(beforeByCombo)) before += sumVisible(c);
-      for (const c of Object.values(afterByCombo)) after += sumVisible(c);
-      return Math.max(before, after);
-    }
-    return Math.max(sumVisible(beforeCounts), sumVisible(afterCounts));
-  }, [splitBySections, beforeCounts, afterCounts, beforeByCombo, afterByCombo, showInvalid]);
+  }, [rows, selectedPeriods, timePeriods, selectedFramework, selectedField, splitBySections, applyFilter, selectedState, showInvalid]);
 
   // Flush filter tracking indexes on state mutations
   useEffect(() => {
-    if (chartRef.current) {
-      chartRef.current._isolatedIndices = null;
-    }
-  }, [selectedFramework, selectedField, selectedPeriod, selectedState, splitBySections, showInvalid]);
+    if (chartRef.current) chartRef.current._isolatedIndices = null;
+  }, [selectedFramework, selectedField, selectedPeriods, selectedState, splitBySections, showInvalid]);
 
 
   // ── 5d. Image Rendering & Snapshot Handlers ────────────────────────────────
@@ -543,7 +560,8 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     const url = newCanvas.toDataURL("image/png", 1);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${selectedField}_${selectedState}_${selectedPeriod}${
+    const safePeriodString = selectedPeriods.join("-").replace(/\//g, ""); // Replaces slashes so it doesn't break file paths
+    a.download = `${selectedField}_${selectedState}_${safePeriodString}${
       splitBySections ? "_by_section" : ""
     }.png`;
     a.click();
@@ -554,10 +572,9 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   }
 
   const availablePeriods = stateMonths[selectedState] ?? [];
-  const periodLabel = timePeriods.find((p) => p.key === selectedPeriod)?.label ?? selectedPeriod;
-  const titleLine2 = `${periodLabel}  (n = ${chartN.toLocaleString()})${
-    splitBySections ? " — split by section" : ""
-  }`;
+  const periodLabel = selectedPeriods.length > 0 
+    ? selectedPeriods.map(p => timePeriods.find((t) => t.key === p)?.label ?? p).join(", ")
+    : "No periods selected";
 
 
   // ── 5e. Rendering Graphics Display Configurations ───────────────────────
@@ -666,7 +683,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       },
       title: {
         display: true,
-        text: [`${selectedField} — Before/After GPC`, titleLine2],
+        text: [`${selectedField} — Before/After GPC`],
         font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
         color: "#1e293b",
         padding: { bottom: 20 },
@@ -714,14 +731,25 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
             {availableStates.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
 
-          <label htmlFor="gs-period" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>Period:</label>
-          <select id="gs-period" value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)} style={{ padding: "4px 8px" }}>
-            {availablePeriods.map((p) => (
-              <option key={p} value={p}>
-                {timePeriods.find((t) => t.key === p)?.label ?? p}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "4px" }}>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Periods:</label>
+            {availablePeriods.map((p) => {
+              const pLabel = timePeriods.find((t) => t.key === p)?.label ?? p;
+              return (
+                <label key={p} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "13px", color: "#475569", cursor: "pointer" }}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedPeriods.includes(p)}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedPeriods([...selectedPeriods, p]);
+                      else setSelectedPeriods(selectedPeriods.filter(sp => sp !== p));
+                    }}
+                  />
+                  {pLabel}
+                </label>
+              );
+            })}
+          </div>
 
           <label htmlFor="gs-field" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>Field:</label>
           <select id="gs-field" value={selectedField} onChange={(e) => setSelectedField(e.target.value)} style={{ padding: "4px 8px" }}>
