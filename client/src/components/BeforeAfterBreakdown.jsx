@@ -54,9 +54,9 @@ const STATUS_RENDER_ORDER = [
 ];
 
 const STATUS_BASE_COLORS = {
-  opted_out: "#10b981",       // Emerald 500
-  did_not_opt_out: "#3b82f6",  // Blue 500
-  not_applicable: "#94a3b8",   // Slate 400
+  opted_out: "#9ee6b0",       // Emerald 500(10b981)         IBM // 648fff         Colab // 9ee6b0
+  did_not_opt_out: "#90ddfe",  // Blue 500(3b82f6)           IBM // e75099         Colab // 90ddfe
+  not_applicable: "#dfc3d4",   // Slate 400(94a3b8)          IBM // ffb000         Colab // dfc3d4
   invalid_missing: "#f59e0b",  // Amber 500
 };
 
@@ -613,15 +613,16 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     plugins: {
       datalabels: {
         display: showDataLabels,
-        color: "#fff",
-        font: { weight: "bold", size: 11 },
+        color: "#000000",
+        font: { weight: "bold", size: 11.5 },
         formatter: (val) => (val > 0 ? val.toLocaleString() : ""),
         anchor: "center",
         align: "center",
+        clip: false, // Prevents Chart.js from culling text that goes outside the canvas boundaries
       },
       legend: {
         position: "top",
-        align: "end",
+        align: "center",
         onClick: (e, legendItem, legend) => {
           const index = legendItem.datasetIndex;
           const chart = legend.chart;
@@ -681,7 +682,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           boxHeight: 12,
           usePointStyle: true,
           pointStyle: "circle",
-          padding: 20,
+          padding: 10,
           font: { size: 12, family: "'Segoe UI', sans-serif", weight: "500" },
           color: "#475569",
         },
@@ -691,7 +692,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
         text: [`${selectedField} — Before/After GPC`],
         font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
         color: "#1e293b",
-        padding: { bottom: 20 },
+        padding: { bottom: 5 }, // space between title and legend
         textAlign: "left",
       },
       tooltip: {
@@ -708,15 +709,16 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
         },
       },
     },
-    categoryPercentage: .8,
+    categoryPercentage: 0.585,  // Reduces row occupancy, leaving more uniform whitespace
+    barPercentage: 1.17       // Slims the bars down uniformly to add padding above/below
   };
 
 
   const hasData = chartData.datasets.length > 0;
 
   // Calculate dynamic height based on the number of labels (Y-axis rows)
-  // Give each row about 35px of breathing room, plus 120px base padding for the legend and title
-  const dynamicHeight = Math.max(260, (chartData.labels?.length || 0) * 35 + 120);
+  // Give each row about 45px of breathing room, plus 120px base padding for the legend and title
+  const dynamicHeight = Math.max(260, (chartData.labels?.length || 0) * 45 + 120);
 
   // ── 5f. Template Dashboard Markup Render Block ────────────────────────────
   return (
