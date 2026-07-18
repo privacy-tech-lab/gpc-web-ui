@@ -8,11 +8,31 @@ const BeforeAfterBreakdown = lazy(
   () => import("./components/BeforeAfterBreakdown.jsx"),
 );
 
+// SVG Icons matching those in SideNav.jsx - Enlarged to 56x56
+function ChartIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
+      <path d="M0 0h1v15h15v1H0V0zm14.817 3.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61 4.15-5.073a.5.5 0 0 1 .704-.07z" />
+    </svg>
+  );
+}
 
-// Renders children only once the wrapper scrolls within rootMargin of the
-// viewport. Used to defer the GPP breakdown chart (its own bundle + CSV
-// parse) until the user is about to see it, so the Reason Trends chart up
-// top isn't competing with it on first paint.
+function PieIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
+      <path d="M15.985 8.5H8.207l5.5 5.5a8 8 0 0 0 2.278-5.5zM14.972 7A7.001 7.001 0 0 0 9 1.028v6.972h5.972zM8 1.028V8l.5.5H15.5A8 8 0 1 0 8 1.028zM7.5 9V1.028A8 8 0 1 0 13.73 14.5L7.5 9z" />
+    </svg>
+  );
+}
+
+function TableIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
+      <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm1 2v2h3V4H1zm4 0v2h3V4H5zm4 0v2h3V4H9zm4 0v2h2V4h-2zM1 7v2h3V7H1zm4 0v2h3V7H5zm4 0v2h2V7h-2zm-12 3v2h3v-2H1zm4 0v2h3v-2H5zm4 0v2h3v-2H9zm4 0v2h2v-2h-2z" />
+    </svg>
+  );
+}
+
 function LazyOnView({ children, fallback = null, rootMargin = "200px" }) {
   const ref = useRef(null);
   const [show, setShow] = useState(false);
@@ -114,7 +134,11 @@ function buildPath(periodEntry, type, state) {
 function normalizeRow(row) {
   const normalized = {};
   Object.keys(row || {}).forEach((key) => {
-    normalized[String(key).trim()] = row[key];
+    let trimmedKey = String(key).trim();
+    if (trimmedKey === "site_isnull" || trimmedKey.toLowerCase() === "site id") {
+      if (trimmedKey === "site_isnull") trimmedKey = "Site Is Null";
+    }
+    normalized[trimmedKey] = row[key];
   });
   return normalized;
 }
@@ -124,6 +148,11 @@ function getRowSearchValue(row) {
     .trim()
     .toLowerCase();
 }
+
+const isSiteUrlColumn = (column) => {
+  const rawLower = String(column || "").toLowerCase();
+  return rawLower === "site url" || rawLower === "site" || rawLower === "domain";
+};
 
 const getParam = (keys, fallback) => {
   if (typeof window === "undefined") return fallback;
@@ -176,6 +205,9 @@ function App() {
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [activeChart, setActiveChart] = useState("trends");
   const [pendingScrollId, setPendingScrollId] = useState(null);
+
+  const pickerBtnRef = useRef(null);
+  const pickerPanelRef = useRef(null);
 
   const [chartFilters, setChartFilters] = useState(() => ({
     selectedSeries: getArrayParam(["cseries"], []),
@@ -240,6 +272,24 @@ function App() {
   }
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      import("./components/BeforeAfterBreakdown.jsx")
+        .then(() => console.log("BeforeAfterBreakdownChart preloaded in background"))
+        .catch((err) => console.warn("Background preload of GPP bundle failed:", err));
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!showOverview) {
+      const resizeTimer = setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      }, 80);
+      return () => clearTimeout(resizeTimer);
+    }
+  }, [showOverview]);
+
+  useEffect(() => {
     if (!pendingScrollId) return;
     const raf1 = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -249,6 +299,22 @@ function App() {
     });
     return () => cancelAnimationFrame(raf1);
   }, [pendingScrollId, viewMode, activeChart, showOverview]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        showColumnPicker &&
+        pickerPanelRef.current &&
+        !pickerPanelRef.current.contains(event.target) &&
+        pickerBtnRef.current &&
+        !pickerBtnRef.current.contains(event.target)
+      ) {
+        setShowColumnPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showColumnPicker]);
 
   const activeSectionId = showOverview
     ? "overview"
@@ -345,7 +411,14 @@ function App() {
       download: true, header: true, dynamicTyping: false, skipEmptyLines: true,
       complete: (parsed) => {
         if (cancelled) return;
-        if (parsed.meta?.fields) setHeaders(parsed.meta.fields.map((field) => String(field).trim()));
+        if (parsed.meta?.fields) {
+          setHeaders(
+            parsed.meta.fields.map((field) => {
+              const trimmed = String(field).trim();
+              return trimmed === "site_isnull" ? "Site Is Null" : trimmed;
+            })
+          );
+        }
         setRows((parsed.data || []).map(normalizeRow));
         setLoading(false);
       },
@@ -371,12 +444,26 @@ function App() {
   }, [loading, searchQuery]);
 
   const displayHeaders = useMemo(() => {
-    if (headers.length > 0) return headers;
-    if (rows.length > 0) return Object.keys(rows[0]);
-    return [];
+    let baseHeaders = [];
+    if (headers.length > 0) {
+      baseHeaders = [...headers];
+    } else if (rows.length > 0) {
+      baseHeaders = Object.keys(rows[0]);
+    }
+
+    if (baseHeaders.length > 0 && !baseHeaders.includes("Compliance Result")) {
+      baseHeaders.push("Compliance Result");
+    }
+    return baseHeaders;
   }, [headers, rows]);
 
-  useEffect(() => { setVisibleColumns(displayHeaders); }, [displayHeaders]);
+  useEffect(() => {
+    if (displayHeaders.includes("Compliance Result")) {
+      setVisibleColumns(["Compliance Result"]);
+    } else if (displayHeaders.length > 0) {
+      setVisibleColumns([displayHeaders[0]]);
+    }
+  }, [displayHeaders]);
 
   const hasSchemaColumn = displayHeaders.includes(SCHEMA_CLASSIFICATION_COLUMN);
   const schemaModeUnavailable = !hasSchemaColumn;
@@ -393,10 +480,94 @@ function App() {
     [rowRecords],
   );
 
-  const firstStickyColumn = useMemo(() => {
-    const columns = Array.isArray(visibleColumns) && visibleColumns.length > 0 ? visibleColumns : displayHeaders;
-    return columns.length > 0 ? columns[0] : undefined;
+  const visibleTableColumns = useMemo(() => {
+    const cols = visibleColumns.length > 0 ? visibleColumns : displayHeaders;
+    const siteUrlCol = displayHeaders.find(isSiteUrlColumn);
+    if (siteUrlCol && !cols.includes(siteUrlCol)) {
+      return [siteUrlCol, ...cols];
+    }
+    return cols;
   }, [visibleColumns, displayHeaders]);
+
+  const firstStickyColumn = useMemo(() => {
+    const columns = Array.isArray(visibleTableColumns) && visibleTableColumns.length > 0 ? visibleTableColumns : displayHeaders;
+    return columns.length > 0 ? columns[0] : undefined;
+  }, [visibleTableColumns, displayHeaders]);
+
+  const groupedColumns = useMemo(() => {
+    const categories = [
+      { id: "website", name: "Website Metadata", columns: [] },
+      { id: "compliance", name: "Compliance Status", columns: [] },
+      { id: "tracking", name: "Tracking & Networks", columns: [] },
+      { id: "gpp", name: "Global Privacy Platform (GPP)", columns: [] },
+      { id: "signals", name: "Cookies & Other Signals", columns: [] },
+      { id: "other", name: "Other Columns", columns: [] },
+    ];
+
+    displayHeaders.forEach((column) => {
+      if (isSiteUrlColumn(column)) {
+        return;
+      }
+
+      const rawLower = column.toLowerCase();
+
+      // Explicitly remove "Site ID" from the editing/picking dashboard list
+      if (rawLower === "site id" || rawLower === "site_id") {
+        return;
+      }
+
+      const friendlyLower = (headerFriendlyNames[column] || column).toLowerCase();
+
+      // Force "Site Is Null" explicitly into the Compliance Status container
+      if (rawLower === "site is null") {
+        categories[1].columns.push(column);
+      }
+      else if (
+        rawLower.includes("site") ||
+        rawLower.includes("domain") ||
+        rawLower.includes("url") && !rawLower.includes("classification") && !rawLower.includes("third_party")
+      ) {
+        categories[0].columns.push(column);
+      }
+      else if (
+        rawLower.includes("compliant") ||
+        rawLower.includes("compliance") ||
+        rawLower.includes("schema") ||
+        rawLower.includes("reason")
+      ) {
+        categories[1].columns.push(column);
+      }
+      else if (
+        rawLower.includes("ad_network") ||
+        rawLower.includes("third_party") ||
+        rawLower.includes("classification") ||
+        friendlyLower.includes("tracking") ||
+        friendlyLower.includes("network") ||
+        friendlyLower.includes("third party")
+      ) {
+        categories[2].columns.push(column);
+      }
+      else if (rawLower.includes("gpp")) {
+        categories[3].columns.push(column);
+      }
+      else if (
+        rawLower.includes("usps") ||
+        rawLower.includes("optanon") ||
+        rawLower.includes("well_known") ||
+        rawLower.includes("well-known") ||
+        friendlyLower.includes("us privacy") ||
+        friendlyLower.includes("cookie") ||
+        friendlyLower.includes("well-known")
+      ) {
+        categories[4].columns.push(column);
+      }
+      else {
+        categories[5].columns.push(column);
+      }
+    });
+
+    return categories.filter((cat) => cat.columns.length > 0);
+  }, [displayHeaders, headerFriendlyNames]);
 
   const filteredRecords = useMemo(() => {
     if (schemaModeUnavailable) return [];
@@ -407,7 +578,7 @@ function App() {
         if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
         if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
-        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
+        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.["Site Is Null"] ?? row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
         return schema?.tokens?.includes(seriesKey);
       };
@@ -437,11 +608,20 @@ function App() {
   const endIndex = Math.min(startIndex + PAGE_SIZE, totalItems);
 
   const pageRows = useMemo(() => filteredRows.slice(startIndex, endIndex), [filteredRows, startIndex, endIndex]);
-  const visibleTableColumns = visibleColumns.length > 0 ? visibleColumns : displayHeaders;
 
   const handleExportFiltered = () => {
     try {
-      const data = filteredRows.map((row) => visibleTableColumns.map((header) => row && row[header] != null ? String(row[header]) : ""));
+      const data = filteredRows.map((row) => 
+        visibleTableColumns.map((header) => {
+          if (row) {
+            if (header === "Compliance Result") {
+              return getSchemaClassificationForRow(row)?.complianceResult || "";
+            }
+            return row[header] != null ? String(row[header]) : "";
+          }
+          return "";
+        })
+      );
       const csv = Papa.unparse({ fields: visibleTableColumns, data });
       const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
@@ -451,14 +631,137 @@ function App() {
     } catch (err) { console.error("Failed to export CSV:", err); }
   };
 
+  const renderTableBody = () => {
+    if (loading) {
+      return (
+        <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16 }}>
+          <h2>Loading CSV...</h2>
+          <p>Fetching configuration and data.</p>
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16, color: "#b00020" }}>
+          <h2>Error</h2>
+          <pre>{error}</pre>
+        </div>
+      );
+    }
+
+    if (schemaModeUnavailable) {
+      return (
+        <div id="table-wrapper" className="empty-state" role="status" aria-live="polite" style={{ padding: 16 }}>
+          <h2>Schema classification unavailable</h2>
+          <p>
+            This dataset doesn&apos;t include the <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column, so it can&apos;t be classified or filtered.
+          </p>
+        </div>
+      );
+    }
+
+    if (filteredRows.length === 0) {
+      return (
+        <div id="table-wrapper">
+          <p style={{ padding: "16px 0" }}>No data rows.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div id="table-wrapper">
+        <div id="pager">
+          <div>
+            {totalItems > 0 && (
+              <span>Showing {startIndex + 1}-{endIndex} of {totalItems}</span>
+            )}
+          </div>
+          <div className="pager-actions">
+            <button onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
+            <span>Page {safeCurrentPage} / {totalPages}</span>
+            <button onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
+          </div>
+        </div>
+        <div id="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                {visibleTableColumns.map((header) => (
+                  <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
+                    {descriptionsOfColumns[header] ? (
+                      <div className="header-wrapper">
+                        <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                        <Tooltip content={descriptionsOfColumns[header]} position="bottom">
+                          <span className="tooltip-icon">?</span>
+                        </Tooltip>
+                      </div>
+                    ) : (
+                      <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {visibleTableColumns.map((header) => {
+                    const isSticky = header === firstStickyColumn;
+                    const isNonCompliant = header === "Reasons_Non_Compliant";
+                    const cellClasses = [
+                      isNonCompliant ? "Reasons_Non_Compliant" : "",
+                      isSticky ? "col-sticky" : "",
+                    ].filter(Boolean).join(" ");
+
+                    const isStructured = STRUCTURED_COLUMNS.has(String(header).toLowerCase());
+                    let cellValue = "";
+                    if (row) {
+                      if (header === "Compliance Result") {
+                        cellValue = getSchemaClassificationForRow(row)?.complianceResult || "";
+                      } else {
+                        cellValue = row[header];
+                      }
+                    }
+
+                    return (
+                      <td key={header} className={cellClasses || undefined}>
+                        {isStructured ? (
+                          <span className="cell-content">{renderJSONCell(cellValue)}</span>
+                        ) : (
+                          <span className="cell-content">{String(cellValue ?? "")}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div id="pager">
+          <div>
+            {totalItems > 0 && (
+              <span>Showing {startIndex + 1}-{endIndex} of {totalItems}</span>
+            )}
+          </div>
+          <div className="pager-actions">
+            <button onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
+            <span>Page {safeCurrentPage} / {totalPages}</span>
+            <button onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const tableContent = (
     <div className="table-section-view">
       <h2 className="section-title" style={{ marginTop: 0 }}>Filter GPC Web Crawler Data</h2>
 
-      {/* ROW 1: State, Time Period, Edit Columns, Export Filtered Data */}
       <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px", width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label htmlFor="state-select" style={{ margin: 0, fontWeight: "500", color: "#475569" }}>State:</label>
+          <label htmlFor="state-select" style={{ margin: 0, fontWeight: "500", color: "#334155" }}>State:</label>
           <select
             id="state-select"
             value={selectedState}
@@ -477,7 +780,7 @@ function App() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label htmlFor="time-period-select" style={{ margin: 0, fontWeight: "500", color: "#475569" }}>Time Period:</label>
+          <label htmlFor="time-period-select" style={{ margin: 0, fontWeight: "500", color: "#334155" }}>Time Period:</label>
           <select
             id="time-period-select"
             value={selectedTimePeriod}
@@ -497,6 +800,7 @@ function App() {
 
         <div style={{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
           <button
+            ref={pickerBtnRef}
             type="button"
             aria-expanded={showColumnPicker}
             aria-controls="column-picker"
@@ -516,14 +820,13 @@ function App() {
         </div>
       </div>
 
-      {/* ROW 2: Smaller & Wider Sites after filter box + Search URL */}
       <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "20px", width: "100%" }}>
         <div style={{ 
           display: "flex", 
           alignItems: "center", 
           gap: "10px", 
           background: "#f8fafc", 
-          border: "1px solid #e2e8f0", 
+          border: "1px solid #cbd5e1", 
           borderRadius: "6px", 
           padding: "6px 14px",
           height: "38px",
@@ -532,13 +835,13 @@ function App() {
           <span style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a" }}>
             {totalItems.toLocaleString()}
           </span>
-          <span style={{ fontSize: "12px", fontWeight: "500", color: "#64748b", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: "12px", fontWeight: "600", color: "#334155", whiteSpace: "nowrap" }}>
             Sites (after filters)
           </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "250px" }}>
-          <label htmlFor="url-search" style={{ margin: 0, fontWeight: "500", color: "#475569", whiteSpace: "nowrap" }}>Search URL:</label>
+          <label htmlFor="url-search" style={{ margin: 0, fontWeight: "500", color: "#334155", whiteSpace: "nowrap" }}>Search URL:</label>
           <input
             id="url-search"
             type="text"
@@ -563,6 +866,7 @@ function App() {
 
       {showColumnPicker && (
         <div
+          ref={pickerPanelRef}
           id="column-picker"
           className="card card--padded column-picker"
           role="group"
@@ -577,129 +881,56 @@ function App() {
                 type="button"
                 className="compact-btn"
                 onClick={() => {
-                  if (visibleColumns.length <= 1) return;
-                  setVisibleColumns((prev) => prev.length > 0 ? [prev[0]] : displayHeaders.slice(0, 1));
+                  const siteUrlCol = displayHeaders.find(isSiteUrlColumn);
+                  if (siteUrlCol) {
+                    setVisibleColumns([siteUrlCol]);
+                  } else if (displayHeaders.length > 0) {
+                    setVisibleColumns(displayHeaders.slice(0, 1));
+                  }
                 }}
-                disabled={visibleColumns.length <= 1}
+                disabled={visibleColumns.length <= 1 && visibleColumns.some(isSiteUrlColumn)}
               >
                 Clear all
               </button>
             </div>
           </div>
-          <div className="column-grid">
-            {displayHeaders.map((column) => {
-              const checked = visibleColumns.includes(column);
-              const id = `col-${column.replace(/\s+/g, "-")}`;
-              return (
-                <label key={column} htmlFor={id} className="column-item">
-                  <input
-                    id={id} type="checkbox" checked={checked}
-                    onChange={() => {
-                      setVisibleColumns((prev) => {
-                        const hasColumn = prev.includes(column);
-                        if (hasColumn) { if (prev.length === 1) return prev; return prev.filter((value) => value !== column); }
-                        return [...prev, column];
-                      });
-                      setCurrentPage(1);
-                    }}
-                  />
-                  <span>{column}</span>
-                </label>
-              );
-            })}
+          
+          <div className="column-categories" style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
+            {groupedColumns.map((cat) => (
+              <div key={cat.id} className="column-category-section">
+                <div style={{ fontWeight: "700", fontSize: "14px", color: "#1e293b", borderBottom: "2px solid #cbd5e1", paddingBottom: "4px", marginBottom: "10px" }}>
+                  {cat.name}
+                </div>
+                <div className="column-grid">
+                  {cat.columns.map((column) => {
+                    const checked = visibleColumns.includes(column);
+                    const id = `col-${column.replace(/\s+/g, "-")}`;
+                    return (
+                      <label key={column} htmlFor={id} className="column-item">
+                        <input
+                          id={id} type="checkbox" checked={checked}
+                          onChange={() => {
+                            setVisibleColumns((prev) => {
+                              if (prev.includes(column)) {
+                                return prev.length === 1 ? prev : prev.filter((value) => value !== column);
+                              }
+                              return [...prev, column];
+                            });
+                            setCurrentPage(1);
+                          }}
+                        />
+                        <span>{headerFriendlyNames[column] || column}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {loading ? (
-        <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16 }}>
-          <h2>Loading CSV...</h2>
-          <p>Fetching configuration and data.</p>
-        </div>
-      ) : error ? (
-        <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16, color: "#b00020" }}>
-          <h2>Error</h2><pre>{error}</pre>
-        </div>
-      ) : schemaModeUnavailable ? (
-        <div id="table-wrapper" className="empty-state" role="status" aria-live="polite" style={{ padding: 16 }}>
-          <h2>Schema classification unavailable</h2>
-          <p>This dataset doesn't include the <code>{SCHEMA_CLASSIFICATION_COLUMN}</code> column, so it can't be classified or filtered.</p>
-        </div>
-      ) : filteredRows.length === 0 ? (
-        <div id="table-wrapper">
-          <p style={{ padding: "16px 0" }}>No data rows.</p>
-        </div>
-      ) : (
-        <div id="table-wrapper">
-          <div id="pager">
-            <div>
-              {totalItems > 0 && (
-                <span>Showing {startIndex + 1}-{endIndex} of {totalItems}</span>
-              )}
-            </div>
-            <div className="pager-actions">
-              <button onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
-              <span>Page {safeCurrentPage} / {totalPages}</span>
-              <button onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
-            </div>
-          </div>
-          <div id="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  {visibleTableColumns.map((header) => (
-                    <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
-                      {descriptionsOfColumns[header] ? (
-                        <div className="header-wrapper">
-                          <span className="header-content">{headerFriendlyNames[header] || header}</span>
-                          <Tooltip content={descriptionsOfColumns[header]} position="bottom">
-                            <span className="tooltip-icon">?</span>
-                          </Tooltip>
-                        </div>
-                      ) : (
-                        <span className="header-content">{headerFriendlyNames[header] || header}</span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {visibleTableColumns.map((header) => (
-                      <td
-                        key={header}
-                        className={[
-                          header === "Reasons_Non_Compliant" ? "Reasons_Non_Compliant" : "",
-                          header === firstStickyColumn ? "col-sticky" : "",
-                        ].filter(Boolean).join(" ") || undefined}
-                      >
-                        {STRUCTURED_COLUMNS.has(String(header).toLowerCase()) ? (
-                          <span className="cell-content">{renderJSONCell(row[header])}</span>
-                        ) : (
-                          <span className="cell-content">{String(row[header] ?? "")}</span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div id="pager">
-            <div>
-              {totalItems > 0 && (
-                <span>Showing {startIndex + 1}-{endIndex} of {totalItems}</span>
-              )}
-            </div>
-            <div className="pager-actions">
-              <button onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
-              <span>Page {safeCurrentPage} / {totalPages}</span>
-              <button onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderTableBody()}
     </div>
   );
 
@@ -770,27 +1001,181 @@ function App() {
           align-items: center;
           justify-content: center;
           gap: 10px;
-          margin-bottom: 8px;
+          margin-bottom: 12px;
         }
       `}</style>
 
       <div className="hero-title-wrapper" id="page-top">
-        <h1 style={{ margin: 0 }}>GPC Compliance Data</h1>
+        <h1 style={{ margin: 0, color: "#0f172a", fontSize: "32px", fontWeight: "800" }}>GPC Compliance Data</h1>
       </div>
 
       {showOverview && (
-        <div className="hero" id="section-overview">
-          <p className="intro">
-            The GPC Web Crawler analyzes websites' compliance with{" "}
-            <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener">Global Privacy Control (GPC)</a>{" "}
+        <div className="hero" id="section-overview" style={{ color: "#0f172a" }}>
+          <p className="intro" style={{ color: "#0f172a", fontSize: "16px", lineHeight: "1.6" }}>
+            The GPC Web Crawler analyzes websites&apos; compliance with{" "}
+            <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Global Privacy Control (GPC)</a>{" "}
             at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
-            The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener">Selenium</a>{" "}
-            and the <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension" target="_blank" rel="noreferrer noopener">OptMeowt Analysis extension</a>.
+            The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Selenium</a>{" "}
+            and the <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>OptMeowt Analysis extension</a>.
             To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
           </p>
-          <p className="intro">
-            <strong>Use the navigation bar on the left to explore other functionality, including the different types of graphs you can build from this data, the GPC breakdown chart, and the full filterable data table.</strong>
-          </p>
+
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", 
+            gap: "24px", 
+            marginTop: "28px" 
+          }}>
+            <button 
+              onClick={() => goToSection("trends")} 
+              className="card" 
+              style={{ 
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "18px",
+                cursor: "pointer", 
+                textAlign: "left", 
+                background: "#ffffff", 
+                border: "1px solid #cbd5e1", 
+                borderRadius: "12px", 
+                padding: "28px", 
+                boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
+                transition: "transform 0.2s, box-shadow 0.2s",
+                width: "100%",
+                boxSizing: "border-box"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-3px)";
+                e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "none";
+                e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
+              }}
+            >
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#f1f5f9",
+                color: "#0f172a",
+                borderRadius: "12px",
+                padding: "16px",
+                flexShrink: 0
+              }}>
+                <ChartIcon />
+              </div>
+              <div>
+                <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Trends Chart</h3>
+                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
+                  <li>Track historical GPC compliance trends over time</li>
+                  <li>Compare response rates across US states (CA, CT, CO, NJ)</li>
+                  <li>Filter graphs by compliance status or violation reasons</li>
+                </ul>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => goToSection("gpp")} 
+              className="card" 
+              style={{ 
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "18px",
+                cursor: "pointer", 
+                textAlign: "left", 
+                background: "#ffffff", 
+                border: "1px solid #cbd5e1", 
+                borderRadius: "12px", 
+                padding: "28px", 
+                boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
+                transition: "transform 0.2s, box-shadow 0.2s",
+                width: "100%",
+                boxSizing: "border-box"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-3px)";
+                e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "none";
+                e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
+              }}
+            >
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#f1f5f9",
+                color: "#0f172a",
+                borderRadius: "12px",
+                padding: "16px",
+                flexShrink: 0
+              }}>
+                <PieIcon />
+              </div>
+              <div>
+                <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>GPC Breakdown</h3>
+                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
+                  <li>Compare privacy compliance before and after GPC signals</li>
+                  <li>Examine GPP string segments and US Privacy Strings (USPS)</li>
+                  <li>Monitor changes in Optanon / OneTrust consent cookies</li>
+                </ul>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => goToSection("table")} 
+              className="card" 
+              style={{ 
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: "18px",
+                cursor: "pointer", 
+                textAlign: "left", 
+                background: "#ffffff", 
+                border: "1px solid #cbd5e1", 
+                borderRadius: "12px", 
+                padding: "28px", 
+                boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
+                transition: "transform 0.2s, box-shadow 0.2s",
+                width: "100%",
+                boxSizing: "border-box"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-3px)";
+                e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "none";
+                e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
+              }}
+            >
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#f1f5f9",
+                color: "#0f172a",
+                borderRadius: "12px",
+                padding: "16px",
+                flexShrink: 0
+              }}>
+                <TableIcon />
+              </div>
+              <div>
+                <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Data Table</h3>
+                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
+                  <li>Search and query specific site URLs across datasets</li>
+                  <li>Customize visible columns for targeted research</li>
+                  <li>Export custom-filtered web crawl data to CSV format</li>
+                </ul>
+              </div>
+            </button>
+          </div>
         </div>
       )}
 
@@ -825,7 +1210,7 @@ function App() {
                   className="card card--padded section"
                   style={{ minHeight: 360 }}
                 >
-                  <p className="muted-text">Loading breakdown…</p>
+                  <p className="muted-text">Loading GPC breakdown…</p>
                 </div>
               }
             >

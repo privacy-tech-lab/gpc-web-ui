@@ -294,7 +294,6 @@ function computeBySection(rows, frameworkKey, field, applyFilter, selectedState)
 // ==============================================================================
 
 function sectionShade(hex, idx, total) {
-  // ... (Keep your existing sectionShade function exactly as is) ...
   if (total <= 1 || idx === 0) return hex;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -416,7 +415,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   const [selectedFramework, setSelectedFramework] = useState("GPP");
   const [selectedState, setSelectedState] = useState(availableStates[0] ?? "CA");
   const [selectedPeriods, setSelectedPeriods] = useState(["Apr2026"]);
-  const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false); // NEW
+  const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
   const [selectedField, setSelectedField] = useState("TargetedAdvertisingOptOut");
   
   const [showInvalid, setShowInvalid] = useState(false);
@@ -623,7 +622,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
         grid: { display: false, drawBorder: false },
         border: { display: false },
         ticks: { 
-          autoSkip: false, // <-- ADD THIS: Forces Chart.js to stop hiding crowded labels
+          autoSkip: false, // Forces Chart.js to stop hiding crowded labels
           font: { size: 13, weight: "600", family: "'Segoe UI', sans-serif" }, 
           color: "#1e293b" 
         },
@@ -864,7 +863,12 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           )}
 
           <div style={{ height: dynamicHeight, marginTop: "0.75rem", transition: "height 0.3s ease-in-out" }}>
-            <Bar ref={chartRef} data={chartData} options={chartOptions} />
+            <Bar 
+              ref={chartRef} 
+              data={chartData} 
+              options={chartOptions} 
+              aria-label={`Bar chart showing ${selectedField} privacy compliance before and after GPC for ${selectedState}`}
+            />
           </div>
 
           {/* Action Execution Footer Toolbar */}
@@ -882,7 +886,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
             <button className="btn-download" onClick={handleDownload}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                 <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z" />
-                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z" />
+                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5 1 0 1 0-.708.708l3 3z" />
               </svg>
               Download PNG
             </button>

@@ -190,24 +190,23 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
 
   return (
     <div className={`sfp__family-card sfp__family-card--gpp ${isOn ? "sfp__family-card--on" : ""}`}>
+      {/* Clean header layout matching standard card structures */}
       <div className="sfp__family-header">
         <span className="sfp__family-label">📋 GPP</span>
-        <div className="sfp__family-header-right">
-          {isOn && (
-            <StatusPills
-              subset={tokens}
-              selectedSet={selectedSet}
-              onToggle={toggleFamilyStatus}
-            />
-          )}
-          <PowerToggle on={isOn} onClick={() => onToggleFamily("gpp")} label="GPP" />
-        </div>
+        <PowerToggle on={isOn} onClick={() => onToggleFamily("gpp")} label="GPP" />
       </div>
 
       {isOn && (
         <div className="sfp__gpp-body">
+          {/* Status Pills are moved down here so they don't break header toggle alignments */}
+          <StatusPills
+            subset={tokens}
+            selectedSet={selectedSet}
+            onToggle={toggleFamilyStatus}
+          />
+
           {/* State chips */}
-          <div className="sfp__gpp-states">
+          <div className="sfp__gpp-states" style={{ marginTop: "12px" }}>
             {states.map((state) => (
               <div key={state} className="sfp__gpp-state-wrapper">
                 <button
@@ -268,20 +267,20 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
                                   position="top"
                                 >
                                   <button
-                                  className={[
-                                    "sfp__status-pill sfp__status-pill--sm",
-                                    cls,
-                                    active ? "sfp__status-pill--on" : "",
-                                  ].join(" ")}
-                                  onClick={() => toggleSingleToken(token, active)}
-                                  style={{
-                                    borderColor: (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
-                                    color: active ? undefined : (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
-                                    background: active ? (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined : undefined,
-                                  }}
-                                >
-                                  {sl}
-                                </button>
+                                    className={[
+                                      "sfp__status-pill sfp__status-pill--sm",
+                                      cls,
+                                      active ? "sfp__status-pill--on" : "",
+                                    ].join(" ")}
+                                    onClick={() => toggleSingleToken(token, active)}
+                                    style={{
+                                      borderColor: (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
+                                      color: active ? undefined : (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
+                                      background: active ? (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined : undefined,
+                                    }}
+                                  >
+                                    {sl}
+                                  </button>
                                 </Tooltip>
                               );
                             })}
