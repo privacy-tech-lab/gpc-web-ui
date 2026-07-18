@@ -524,7 +524,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                         style={activeChart === "gpp" ? { opacity: 0.55, cursor: "default" } : undefined}
                         onClick={() => setActiveChart("gpp")}
                       >
-                        GPP Breakdown
+                        GPC Breakdown
                       </button>
                     </div>
                   </div>

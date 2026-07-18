@@ -3,11 +3,6 @@ import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 
-/*
-const GppSectionBreakdownChart = lazy(
-  () => import("./components/GppSectionBreakdownChart.jsx"),
-);
-*/
 const BeforeAfterBreakdown = lazy(
   () => import("./components/BeforeAfterBreakdown.jsx"),
 );
@@ -874,7 +869,7 @@ function App() {
                   className="card card--padded section"
                   style={{ minHeight: 360 }}
                 >
-                  <p className="muted-text">Loading GPP breakdown…</p>
+                  <p className="muted-text">Loading breakdown…</p>
                 </div>
               }
             >

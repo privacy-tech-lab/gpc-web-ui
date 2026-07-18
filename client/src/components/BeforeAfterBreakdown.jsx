@@ -54,9 +54,9 @@ const STATUS_RENDER_ORDER = [
 ];
 
 const STATUS_BASE_COLORS = {
-  opted_out: "#9ee6b0",       // Emerald 500(10b981)         IBM // 648fff         Colab // 9ee6b0
-  did_not_opt_out: "#90ddfe",  // Blue 500(3b82f6)           IBM // e75099         Colab // 90ddfe
-  not_applicable: "#dfc3d4",   // Slate 400(94a3b8)          IBM // ffb000         Colab // dfc3d4
+  opted_out: "#10b981",       // Emerald 500(10b981)       IBM // 648fff         Colab // 9ee6b0
+  did_not_opt_out: "#3b82f6",  // Blue 500(3b82f6)         IBM // e75099         Colab // 90ddfe
+  not_applicable: "#94a3b8",   // Slate 400(94a3b8)        IBM // ffb000         Colab // dfc3d4
   invalid_missing: "#f59e0b",  // Amber 500
 };
 
@@ -64,7 +64,7 @@ const STATUS_LABELS = {
   opted_out: "Opted Out",
   did_not_opt_out: "Did Not Opt Out",
   not_applicable: "Not Applicable",
-  invalid_missing: "Invalid / Missing", // TODO: Update Invariants to use this string instead of returning []
+  invalid_missing: "Invalid / Missing", // TODO: Update framework stratgeies to use this string instead of returning []
 };
 
 
@@ -171,8 +171,8 @@ const PRIVACY_FRAMEWORK_DECODERS = {
 
   // ── STRATEGY 3: OneTrust (currently just OptanonConsent) ────────────────────────────────────
   OneTrust: {
-    label: "OptanonConsent",
-    fields: ["isGpcEnabled"],
+    label: "OneTrust (OT)",
+    fields: ["OptanonConsent Cookie Opt-Opts"],
     // TODO Add support for other labels and fields
     // see https://my.onetrust.com/articles/en_US/Knowledge/UUID-2dc719a8-4be5-8d16-1dc8-c7b4147b88e0#:~:text=Decoded%20Example%20Cookie
     hasSections: false,
@@ -195,7 +195,7 @@ const PRIVACY_FRAMEWORK_DECODERS = {
       if (!raw || ["null", ""].includes(String(raw).trim())) return [["OneTrust", "invalid_missing"]];
 
       // 3. Map field to status.
-      if (field == "isGpcEnabled") // currently redundant
+      if (field == "OptanonConsent Cookie Opt-Opts") // currently redundant
       {
         if (raw === "no_gpc") return [["OneTrust", "not_applicable"]]
 
@@ -415,14 +415,33 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   
   const [selectedFramework, setSelectedFramework] = useState("GPP");
   const [selectedState, setSelectedState] = useState(availableStates[0] ?? "CA");
-  const [selectedPeriods, setSelectedPeriods] = useState([]);
+  const [selectedPeriods, setSelectedPeriods] = useState(["Apr2026"]);
   const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false); // NEW
   const [selectedField, setSelectedField] = useState("TargetedAdvertisingOptOut");
   
   const [showInvalid, setShowInvalid] = useState(false);
-  const [showDataLabels, setShowDataLabels] = useState(false);
+  const [showDataLabels, setShowDataLabels] = useState(true);
   const [splitBySections, setSplitBySections] = useState(false);
   const applyFilter = true; // true ensures consistency with Colab (Dec2023, Apr2024, Jun2024 are untested)
+
+  // Synchronize Field select choices when changing Frameworks
+  useEffect(() => {
+    const validFields = PRIVACY_FRAMEWORK_DECODERS[selectedFramework]?.fields || [];
+    if (!validFields.includes(selectedField)) {
+      setSelectedField(validFields[0]);
+    }
+    
+    // Automatically turn off section splitting if the framework doesn't support sections
+    if (!PRIVACY_FRAMEWORK_DECODERS[selectedFramework]?.hasSections) {
+      setSplitBySections(false);
+    }
+  }, [selectedFramework, selectedField]);
+
+  // Remove already-selected periods if they do not exist inside the newly chosen State
+  useEffect(() => {
+    const validPeriodsForState = stateMonths[selectedState] || [];
+    setSelectedPeriods((prev) => prev.filter((p) => validPeriodsForState.includes(p)));
+  }, [selectedState, stateMonths]);
 
 
   // ── 5b. File Fetching Lifecycle Hooks ───────────────────────────────────────
@@ -689,7 +708,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       },
       title: {
         display: true,
-        text: [`${selectedField} — Before/After GPC`],
+        text: [`${selectedField}`],
         font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
         color: "#1e293b",
         padding: { bottom: 5 }, // space between title and legend
@@ -723,11 +742,11 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   // ── 5f. Template Dashboard Markup Render Block ────────────────────────────
   return (
     <div className="card card--padded section">
-      <h2>Privacy Compliance Before and After GPC</h2>
+      <h2>Privacy Compliance Before and After Sending GPC Signal</h2>
 
       {/* Control Configuration Interface */}
       <div className="toolbar" role="group" aria-label="Privacy breakdown chart filters">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingRight: "12px", borderRight: "1px solid #e2e8f0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingRight: "12px"}}>
           
           <label htmlFor="gs-framework" style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Framework:</label>
           <select id="gs-framework" value={selectedFramework} onChange={(e) => setSelectedFramework(e.target.value)} style={{ padding: "4px 8px" }}>
@@ -770,13 +789,20 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
                   return (
                     <label key={p} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#475569", cursor: "pointer" }}>
                       <input 
-                        type="checkbox" 
-                        checked={selectedPeriods.includes(p)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedPeriods([...selectedPeriods, p]);
-                          else setSelectedPeriods(selectedPeriods.filter(sp => sp !== p));
-                        }}
-                      />
+                            type="checkbox" 
+                            checked={selectedPeriods.includes(p)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                // 1. Create the new list of selections
+                                const nextPeriods = [...selectedPeriods, p];
+                                // 2. Filter availablePeriods to only include items that are in nextPeriods
+                                const sortedPeriods = availablePeriods.filter((item) => nextPeriods.includes(item));
+                                setSelectedPeriods(sortedPeriods);
+                              } else {
+                                setSelectedPeriods(selectedPeriods.filter((item) => item !== p));
+                              }
+                            }}
+                          />
                       {pLabel}
                     </label>
                   );
@@ -793,25 +819,19 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           </select>
         </div>
 
-        {/* Structural Regional Segmentation Checkbox */}
-        <div style={{ display: "flex", alignItems: "center", gap: "14px", paddingLeft: "4px" }}>
-          <label style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            gap: "5px", 
-            fontSize: "13px", 
-            color: PRIVACY_FRAMEWORK_DECODERS[selectedFramework].hasSections ? "#475569" : "#cbd5e1", 
-            cursor: PRIVACY_FRAMEWORK_DECODERS[selectedFramework].hasSections ? "pointer" : "not-allowed" 
-          }}>
-            <input 
-              type="checkbox" 
-              checked={splitBySections} 
-              disabled={!PRIVACY_FRAMEWORK_DECODERS[selectedFramework].hasSections}
-              onChange={(e) => setSplitBySections(e.target.checked)} 
-            />
-            Split by GPP type
-          </label>
-        </div>
+        {/* Split GPP Checkbox */}
+        {selectedFramework === "GPP" && (
+          <div style={{ display: "flex", alignItems: "center", gap: "14px", paddingLeft: "12px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "13px", color: "#475569", cursor: "pointer" }}>
+              <input 
+                type="checkbox" 
+                checked={splitBySections} 
+                onChange={(e) => setSplitBySections(e.target.checked)} 
+              />
+              Split by GPP type
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Loading Canvas View */}
