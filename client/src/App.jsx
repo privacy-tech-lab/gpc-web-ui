@@ -789,7 +789,7 @@ function App() {
             To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
           </p>
           <p className="intro">
-            <strong>Use the navigation bar on the left to explore other functionality, including the different types of graphs you can build from this data, the GPP breakdown chart, and the full filterable data table.</strong>
+            <strong>Use the navigation bar on the left to explore other functionality, including the different types of graphs you can build from this data, the GPC breakdown chart, and the full filterable data table.</strong>
           </p>
         </div>
       )}
