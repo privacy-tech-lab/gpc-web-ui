@@ -708,7 +708,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       },
       title: {
         display: true,
-        text: [`${selectedField}`],
+        text: [`${selectedField} (${selectedState})`],
         font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
         color: "#1e293b",
         padding: { bottom: 5 }, // space between title and legend
