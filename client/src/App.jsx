@@ -4,9 +4,10 @@ import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 import SideNav from "./components/SideNav.jsx";
 
-const GppSectionBreakdownChart = lazy(
-  () => import("./components/GppSectionBreakdownChart.jsx"),
+const BeforeAfterBreakdown = lazy(
+  () => import("./components/BeforeAfterBreakdown.jsx"),
 );
+
 
 // Renders children only once the wrapper scrolls within rootMargin of the
 // viewport. Used to defer the GPP breakdown chart (its own bundle + CSV
@@ -788,7 +789,7 @@ function App() {
             To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
           </p>
           <p className="intro">
-            <strong>Use the navigation bar on the left to explore other functionality, including the different types of graphs you can build from this data, the GPP breakdown chart, and the full filterable data table.</strong>
+            <strong>Use the navigation bar on the left to explore other functionality, including the different types of graphs you can build from this data, the GPC breakdown chart, and the full filterable data table.</strong>
           </p>
         </div>
       )}
@@ -824,11 +825,11 @@ function App() {
                   className="card card--padded section"
                   style={{ minHeight: 360 }}
                 >
-                  <p className="muted-text">Loading GPP breakdown…</p>
+                  <p className="muted-text">Loading breakdown…</p>
                 </div>
               }
             >
-              <GppSectionBreakdownChart
+              <BeforeAfterBreakdown
                 timePeriods={TIME_PERIODS}
                 stateMonths={STATE_MONTHS}
               />

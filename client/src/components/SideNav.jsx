@@ -56,8 +56,8 @@ const NAV_ITEMS = [
     },
     {
         id: "gpp",
-        label: "GPP Breakdown",
-        description: "View the GPP section breakdown chart.",
+        label: "GPC Breakdown",
+        description: "View the GPC section breakdown chart.",
         Icon: PieIcon,
     },
     {
