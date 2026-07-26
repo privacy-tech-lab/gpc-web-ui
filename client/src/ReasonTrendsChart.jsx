@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, useRef, memo } from "react";
-import Papa from "papaparse";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -18,13 +17,13 @@ import Tooltip from "./components/Tooltip";
 import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
-  getSchemaClassificationForRow,
   isSchemaRowNonCompliant,
   sortSchemaTokens,
   parseSchemaToken,
-}
-from "./utils/schemaClassification.js";
+} from "./utils/schemaClassification.js";
 import { STATUS_COLOR_PALETTES, LEGACY_COLOR_PALETTE, SPECIAL_SERIES, getColorForSeries } from "./utils/colorPalettes.js";
+import { loadDataset, datasetCache } from "./utils/datasetCache.js";
+import datasetsManifest from "./generated/datasets.json";
 
 ChartJS.register(
   CategoryScale,
@@ -57,33 +56,7 @@ const SPECIAL_SERIES_DESCRIPTIONS = {
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
 
-const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
-
-function normalizeRow(row) {
-  const normalized = {};
-  Object.keys(row || {}).forEach(key => { normalized[String(key).trim()] = row[key]; });
-  return normalized;
-}
-
-async function parseCsv(publicCsvPath) {
-  const response = await fetch(publicCsvPath);
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${publicCsvPath}`);
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("html")) {
-    throw new Error(`Expected CSV, got HTML for ${publicCsvPath}`);
-  }
-  const text = await response.text();
-  return new Promise((resolve, reject) => {
-    Papa.parse(text, {
-      header: true, skipEmptyLines: true,
-      complete: parsed => resolve({
-        headers: (parsed.meta?.fields || []).map(f => String(f).trim()),
-        rows: (parsed.data || []).map(normalizeRow),
-      }),
-      error: err => reject(err instanceof Error ? err : new Error(String(err))),
-    });
-  });
-}
+const AVAILABLE_STATES = datasetsManifest.states || ["CA", "CT", "CO", "NJ"];
 
 const ReasonTrendsChart = memo(function ReasonTrendsChart({
   viewMode,
@@ -163,48 +136,27 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     });
   }, []);
 
+  // Preload data for ALL states upfront on initial load using datasetCache
   useEffect(() => {
     let cancelled = false;
-    async function loadSelectedStates() {
+    async function loadAllStates() {
       setLoading(true); setError("");
       try {
-        const states = Array.isArray(selectedStates) ? selectedStates : [];
-        if (states.length === 0) {
-          setStateMonthToAllRecords({}); setStateMonthToNullRows({}); setStateMonthToSchemaAvailability({});
-          setLoading(false); return;
-        }
-
+        const states = AVAILABLE_STATES;
         const perStateResults = await Promise.all(
           states.map(async (stateCode) => {
-            const monthKeys = (stateMonths && stateMonths[stateCode]) || [];
+            const periods = datasetsManifest.periodsByState[stateCode] || [];
             const monthResults = await Promise.all(
-              monthKeys.map(async (monthKey) => {
-                const allPath = `/${stateCode}/Crawl_Data_${stateCode} - ${monthKey}.csv`;
-
-                const allData = await parseCsv(allPath);
-
-                const hasSchemaColumn = allData.headers.includes(
-                  SCHEMA_CLASSIFICATION_COLUMN
-                );
-                const allRecords = allData.rows.map((row) => ({
-                  row,
-                  schema: getSchemaClassificationForRow(row),
-                }));
-
-                const nullRows = allData.rows.filter(
-                  (row) =>
-                    String(row?.site_isnull ?? "").trim().toUpperCase() === "TRUE"
-                );
-
+              periods.map(async (periodEntry) => {
+                const data = await loadDataset(stateCode, periodEntry);
                 return {
-                  key: monthKey,
-                  allRecords,
-                  nullRows,
-                  hasSchemaColumn,
+                  key: periodEntry.key,
+                  allRecords: data?.allRecords || [],
+                  nullRows: data?.nullRows || [],
+                  hasSchemaColumn: Boolean(data?.hasSchemaColumn),
                 };
               })
             );
-
             return { stateCode, monthResults };
           })
         );
@@ -215,14 +167,21 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           nextAll[stateCode] = {}; nextNull[stateCode] = {}; nextAvail[stateCode] = {};
           monthResults.forEach(m => {
             nextAll[stateCode][m.key] = m.allRecords;
-            nextNull[stateCode][m.key] = m.nullRows; nextAvail[stateCode][m.key] = m.hasSchemaColumn;
+            nextNull[stateCode][m.key] = m.nullRows;
+            nextAvail[stateCode][m.key] = m.hasSchemaColumn;
           });
         });
-        setStateMonthToAllRecords(nextAll); setStateMonthToNullRows(nextNull); setStateMonthToSchemaAvailability(nextAvail);
-      } catch (err) { if (!cancelled) setError(err.message); } finally { if (!cancelled) setLoading(false); }
+        setStateMonthToAllRecords(nextAll);
+        setStateMonthToNullRows(nextNull);
+        setStateMonthToSchemaAvailability(nextAvail);
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    loadSelectedStates(); return () => { cancelled = true; };
-  }, [selectedStates, stateMonths]);
+    loadAllStates(); return () => { cancelled = true; };
+  }, []);
 
   const unifiedMonthKeys = useMemo(() => {
     const states = selectedStates || [];
@@ -238,13 +197,13 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
 
   const schemaSeriesMeta = useMemo(() => {
     const labelsByToken = {}; const descriptionsByToken = {}; const tokenSet = new Set();
-    selectedStates.forEach(s => unifiedMonthKeys.forEach(m => {
-      (stateMonthToAllRecords[s]?.[m] || []).forEach(({ schema }) => schema.tokens.forEach(t => {
+    AVAILABLE_STATES.forEach(s => (stateMonths[s] || []).forEach(m => {
+      (stateMonthToAllRecords[s]?.[m] || []).forEach(({ schema }) => schema?.tokens?.forEach(t => {
         tokenSet.add(t); labelsByToken[t] = schema.labels[t] || t; descriptionsByToken[t] = schema.descriptions[t] || "";
       }));
     }));
     return { tokens: sortSchemaTokens(tokenSet), labelsByToken, descriptionsByToken };
-  }, [selectedStates, stateMonthToAllRecords, unifiedMonthKeys]);
+  }, [stateMonthToAllRecords, stateMonths]);
 
   const seriesOptions = useMemo(() => {
     const baseSchema = [
@@ -515,9 +474,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             )}
           </div>
 
-          {/* RIGHT SIDE: Filters. Sticky + independently scrollable so a tall
-              filter list doesn't add page height beyond what the chart/table
-              itself needs. */}
+          {/* RIGHT SIDE: Filters */}
           <div
             style={{
               flex: "0 0 350px",

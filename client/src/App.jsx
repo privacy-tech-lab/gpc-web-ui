@@ -3,6 +3,7 @@ import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 import SideNav from "./components/SideNav.jsx";
+import { loadDataset, preloadAllDatasets, datasetCache } from "./utils/datasetCache.js";
 
 const BeforeAfterBreakdown = lazy(
   () => import("./components/BeforeAfterBreakdown.jsx"),
@@ -28,7 +29,7 @@ function PieIcon() {
 function TableIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
-      <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm1 2v2h3V4H1zm4 0v2h3V4H5zm4 0v2h3V4H9zm4 0v2h2V4h-2zM1 7v2h3V7H1zm4 0v2h3V7H5zm4 0v2h2V7h-2zm-12 3v2h3v-2H1zm4 0v2h3v-2H5zm4 0v2h3v-2H9zm4 0v2h2v-2h-2z" />
+      <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm1 2v2h3V4H1zm4 0v2h3V4H5zm4 0v2h3V4H9zm4 0v2h2V4h-2zM1 7v2h3V7H1zm4 0v2h3V7H5zm4 0v2h3V7H9zm4 0v2h2V7h-2zm-12 3v2h3v-2H1zm4 0v2h3v-2H5zm4 0v2h3v-2H9zm4 0v2h2v-2h-2z" />
     </svg>
   );
 }
@@ -131,18 +132,6 @@ function buildPath(periodEntry, type, state) {
   return `/${state}/${periodEntry.file}`;
 }
 
-function normalizeRow(row) {
-  const normalized = {};
-  Object.keys(row || {}).forEach((key) => {
-    let trimmedKey = String(key).trim();
-    if (trimmedKey === "site_isnull" || trimmedKey.toLowerCase() === "site id") {
-      if (trimmedKey === "site_isnull") trimmedKey = "Site Is Null";
-    }
-    normalized[trimmedKey] = row[key];
-  });
-  return normalized;
-}
-
 function getRowSearchValue(row) {
   return String(row?.["Site URL"] ?? row?.domain ?? row?.site ?? "")
     .trim()
@@ -227,21 +216,10 @@ function App() {
         typeof updater === "function" ? updater(prev.selectedStates) : updater,
     }));
 
-  const prevChartStates = useRef(chartFilters.selectedStates);
+  // Start background preloading all datasets on boot
   useEffect(() => {
-    const currentStates = chartFilters.selectedStates || [];
-    const prevStates = prevChartStates.current || [];
-    prevChartStates.current = currentStates;
-
-    const newlyAdded = currentStates.find(s => !prevStates.includes(s));
-    if (newlyAdded) {
-      setSelectedState(newlyAdded);
-      setCurrentPage(1);
-    } else if (currentStates.length > 0 && !currentStates.includes(selectedState)) {
-      setSelectedState(currentStates[0]);
-      setCurrentPage(1);
-    }
-  }, [chartFilters.selectedStates, selectedState]);
+    preloadAllDatasets();
+  }, []);
 
   function goToSection(sectionId) {
     switch (sectionId) {
@@ -397,39 +375,48 @@ function App() {
     }
   }, [selectedState, selectedTimePeriod]);
 
+  // Load table dataset using shared dataset memory cache
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(""); setHeaders([]); setRows([]);
 
-    if (!filePath) {
+    if (!filePath || !currentPeriodEntry) {
       setError("No dataset available for the selected state and time period.");
       setLoading(false);
       return;
     }
 
-    Papa.parse(filePath, {
-      download: true, header: true, dynamicTyping: false, skipEmptyLines: true,
-      complete: (parsed) => {
+    const cacheKey = `${selectedState}_${selectedTimePeriod}`;
+    if (datasetCache.has(cacheKey)) {
+      const cached = datasetCache.get(cacheKey);
+      setHeaders(cached.headers);
+      setRows(cached.rows);
+      setError("");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    loadDataset(selectedState, currentPeriodEntry)
+      .then((data) => {
         if (cancelled) return;
-        if (parsed.meta?.fields) {
-          setHeaders(
-            parsed.meta.fields.map((field) => {
-              const trimmed = String(field).trim();
-              return trimmed === "site_isnull" ? "Site Is Null" : trimmed;
-            })
-          );
+        if (data) {
+          setHeaders(data.headers);
+          setRows(data.rows);
         }
-        setRows((parsed.data || []).map(normalizeRow));
         setLoading(false);
-      },
-      error: (err) => {
+      })
+      .catch((err) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
-      },
-    });
-    return () => { cancelled = true; };
-  }, [filePath]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedState, selectedTimePeriod, currentPeriodEntry, filePath]);
 
   useEffect(() => {
     if (!loading && searchQuery && !hasScrolledToSearch.current) {
@@ -511,14 +498,12 @@ function App() {
 
       const rawLower = column.toLowerCase();
 
-      // Explicitly remove "Site ID" from the editing/picking dashboard list
       if (rawLower === "site id" || rawLower === "site_id") {
         return;
       }
 
       const friendlyLower = (headerFriendlyNames[column] || column).toLowerCase();
 
-      // Force "Site Is Null" explicitly into the Compliance Status container
       if (rawLower === "site is null") {
         categories[1].columns.push(column);
       }
@@ -935,296 +920,341 @@ function App() {
   );
 
   return (
-    <>
+    <div className="app-layout">
       <SideNav activeSectionId={activeSectionId} onNavigate={goToSection} />
       <div className="app-container">
-      <style>{`
-        #table-scroll table {
-          width: 100%;
-          border-collapse: collapse;
-        }
-        #table-scroll th {
-          padding: 6px 12px;
-          text-align: left;
-        }
-        #table-scroll td {
-          padding: 4px 12px;
-          max-width: 260px;
-          min-width: 140px;
-          position: relative;
-          box-sizing: border-box;
-          vertical-align: top;
-        }
-        #table-scroll td.col-sticky {
-          position: sticky;
-        }
-        #table-scroll td .cell-content {
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: normal;
-          max-width: 100%;
-          line-height: 1.3em;
-          max-height: 2.6em;
-        }
-        #table-scroll td:hover {
-          overflow: visible;
-          z-index: 90;
-        }
-        #table-scroll td:hover .cell-content {
-          display: block;
-          position: absolute;
-          left: 0;
-          top: 0;
-          min-width: 100%;
-          width: max-content;
-          max-width: 520px;
-          white-space: normal;
-          background: #ffffff;
-          padding: 8px 12px;
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
-          border: 1px solid #cbd5e1;
-          z-index: 120;
-          border-radius: 4px;
-          word-break: break-word;
-          color: #0f172a;
-          max-height: none;
-          -webkit-line-clamp: unset;
-        }
-        #table-scroll td.col-sticky:hover .cell-content {
-          left: 0;
-        }
-        .hero-title-wrapper {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          margin-bottom: 12px;
-        }
-      `}</style>
+        <style>{`
+          /* 1. Global Reset to eliminate the outer margin/padding on the left */
+          html, body, #root {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+          }
 
-      <div className="hero-title-wrapper" id="page-top">
-        <h1 style={{ margin: 0, color: "#0f172a", fontSize: "32px", fontWeight: "800" }}>GPC Compliance Data</h1>
-      </div>
+          /* 2. Force full flex layout */
+          .app-layout {
+            display: flex !important;
+            width: 100% !important;
+            min-height: 100vh !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow-x: hidden !important;
+          }
 
-      {showOverview && (
-        <div className="hero" id="section-overview" style={{ color: "#0f172a" }}>
-          <p className="intro" style={{ color: "#0f172a", fontSize: "16px", lineHeight: "1.6" }}>
-            The GPC Web Crawler analyzes websites&apos; compliance with{" "}
-            <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Global Privacy Control (GPC)</a>{" "}
-            at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
-            The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Selenium</a>{" "}
-            and the <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>OptMeowt Analysis extension</a>.
-            To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
-          </p>
+          /* 3. Sticky side navbar pinned flush to left edge */
+          .side-nav {
+            position: sticky !important;
+            top: 0 !important;
+            left: 0 !important;
+            height: 100vh !important;
+            flex-shrink: 0 !important;
+            width: 60px !important;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            overflow-x: hidden !important;
+            z-index: 100 !important;
+            box-sizing: border-box !important;
+          }
 
-          <div style={{ 
-            display: "grid", 
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", 
-            gap: "24px", 
-            marginTop: "28px" 
-          }}>
-            <button 
-              onClick={() => goToSection("trends")} 
-              className="card" 
-              style={{ 
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: "18px",
-                cursor: "pointer", 
-                textAlign: "left", 
-                background: "#ffffff", 
-                border: "1px solid #cbd5e1", 
-                borderRadius: "12px", 
-                padding: "28px", 
-                boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
-                transition: "transform 0.2s, box-shadow 0.2s",
-                width: "100%",
-                boxSizing: "border-box"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-3px)";
-                e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "none";
-                e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
-              }}
-            >
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "#f1f5f9",
-                color: "#0f172a",
-                borderRadius: "12px",
-                padding: "16px",
-                flexShrink: 0
-              }}>
-                <ChartIcon />
-              </div>
-              <div>
-                <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Trends Chart</h3>
-                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
-                  <li>Track historical GPC compliance trends over time</li>
-                  <li>Compare response rates across US states (CA, CT, CO, NJ)</li>
-                  <li>Filter graphs by compliance status or violation reasons</li>
-                </ul>
-              </div>
-            </button>
+          .side-nav.side-nav--expanded,
+          .side-nav--expanded {
+            width: 260px !important;
+          }
 
-            <button 
-              onClick={() => goToSection("gpp")} 
-              className="card" 
-              style={{ 
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: "18px",
-                cursor: "pointer", 
-                textAlign: "left", 
-                background: "#ffffff", 
-                border: "1px solid #cbd5e1", 
-                borderRadius: "12px", 
-                padding: "28px", 
-                boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
-                transition: "transform 0.2s, box-shadow 0.2s",
-                width: "100%",
-                boxSizing: "border-box"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-3px)";
-                e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "none";
-                e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
-              }}
-            >
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "#f1f5f9",
-                color: "#0f172a",
-                borderRadius: "12px",
-                padding: "16px",
-                flexShrink: 0
-              }}>
-                <PieIcon />
-              </div>
-              <div>
-                <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>GPC Breakdown</h3>
-                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
-                  <li>Compare privacy compliance before and after GPC signals</li>
-                  <li>Examine GPP string segments and US Privacy Strings (USPS)</li>
-                  <li>Monitor changes in Optanon / OneTrust consent cookies</li>
-                </ul>
-              </div>
-            </button>
+          .app-container {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            padding: 24px !important;
+          }
 
-            <button 
-              onClick={() => goToSection("table")} 
-              className="card" 
-              style={{ 
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: "18px",
-                cursor: "pointer", 
-                textAlign: "left", 
-                background: "#ffffff", 
-                border: "1px solid #cbd5e1", 
-                borderRadius: "12px", 
-                padding: "28px", 
-                boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
-                transition: "transform 0.2s, box-shadow 0.2s",
-                width: "100%",
-                boxSizing: "border-box"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-3px)";
-                e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "none";
-                e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
-              }}
-            >
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "#f1f5f9",
-                color: "#0f172a",
-                borderRadius: "12px",
-                padding: "16px",
-                flexShrink: 0
-              }}>
-                <TableIcon />
-              </div>
-              <div>
-                <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Data Table</h3>
-                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
-                  <li>Search and query specific site URLs across datasets</li>
-                  <li>Customize visible columns for targeted research</li>
-                  <li>Export custom-filtered web crawl data to CSV format</li>
-                </ul>
-              </div>
-            </button>
-          </div>
+          #table-scroll table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          #table-scroll th {
+            padding: 6px 12px;
+            text-align: left;
+          }
+          #table-scroll td {
+            padding: 4px 12px;
+            max-width: 260px;
+            min-width: 140px;
+            position: relative;
+            box-sizing: border-box;
+            vertical-align: top;
+          }
+          #table-scroll td.col-sticky {
+            position: sticky;
+          }
+          #table-scroll td .cell-content {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: normal;
+            max-width: 100%;
+            line-height: 1.3em;
+            max-height: 2.6em;
+          }
+          #table-scroll td:hover {
+            overflow: visible;
+            z-index: 90;
+          }
+          #table-scroll td:hover .cell-content {
+            display: block;
+            position: absolute;
+            left: 0;
+            top: 0;
+            min-width: 100%;
+            width: max-content;
+            max-width: 520px;
+            white-space: normal;
+            background: #ffffff;
+            padding: 8px 12px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+            border: 1px solid #cbd5e1;
+            z-index: 120;
+            border-radius: 4px;
+            word-break: break-word;
+            color: #0f172a;
+            max-height: none;
+            -webkit-line-clamp: unset;
+          }
+          #table-scroll td.col-sticky:hover .cell-content {
+            left: 0;
+          }
+          .hero-title-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 12px;
+          }
+        `}</style>
+
+        <div className="hero-title-wrapper" id="page-top">
+          <h1 style={{ margin: 0, color: "#0f172a", fontSize: "32px", fontWeight: "800" }}>GPC Compliance Data</h1>
         </div>
-      )}
 
-      {!showOverview && (
-      <ReasonTrendsChart
-        viewMode={viewMode}
-        tableContent={tableContent}
-        timePeriods={TIME_PERIODS}
-        stateMonths={STATE_MONTHS}
-        selectedSeries={chartFilters.selectedSeries}
-        setSelectedSeries={setChartSelectedSeries}
-        selectedStates={chartFilters.selectedStates}
-        setSelectedStates={setChartSelectedStates}
-        chartType={chartType}
-        setChartType={setChartType}
-        activeChart={activeChart}
-        setActiveChart={setActiveChart}
-        setCurrentPage={setCurrentPage}
-        gppSection={
-          <LazyOnView
-            fallback={
-              <div
-                className="card card--padded section"
-                style={{ minHeight: 360 }}
-                aria-hidden="true"
-              />
-            }
-          >
-            <Suspense
-              fallback={
-                <div
-                  className="card card--padded section"
-                  style={{ minHeight: 360 }}
-                >
-                  <p className="muted-text">Loading GPC breakdown…</p>
+        {showOverview && (
+          <div className="hero" id="section-overview" style={{ color: "#0f172a" }}>
+            <p className="intro" style={{ color: "#0f172a", fontSize: "16px", lineHeight: "1.6" }}>
+              The GPC Web Crawler analyzes websites&apos; compliance with{" "}
+              <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Global Privacy Control (GPC)</a>{" "}
+              at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
+              The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Selenium</a>{" "}
+              and the <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/tree/main/gpc-analysis-extension" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>OptMeowt Analysis extension</a>.
+              To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
+            </p>
+
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", 
+              gap: "24px", 
+              marginTop: "28px" 
+            }}>
+              <button 
+                onClick={() => goToSection("trends")} 
+                className="card" 
+                style={{ 
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "18px",
+                  cursor: "pointer", 
+                  textAlign: "left", 
+                  background: "#ffffff", 
+                  border: "1px solid #cbd5e1", 
+                  borderRadius: "12px", 
+                  padding: "28px", 
+                  boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  width: "100%",
+                  boxSizing: "border-box"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-3px)";
+                  e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "none";
+                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
+                }}
+              >
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#f1f5f9",
+                  color: "#0f172a",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  flexShrink: 0
+                }}>
+                  <ChartIcon />
                 </div>
-              }
-            >
-              <BeforeAfterBreakdown
-                timePeriods={TIME_PERIODS}
-                stateMonths={STATE_MONTHS}
-              />
-            </Suspense>
-          </LazyOnView>
-        }
-      />
-      )}
+                <div>
+                  <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Trends Chart</h3>
+                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
+                    <li>Track historical GPC compliance trends over time</li>
+                    <li>Compare response rates across US states (CA, CT, CO, NJ)</li>
+                    <li>Filter graphs by compliance status or violation reasons</li>
+                  </ul>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => goToSection("gpp")} 
+                className="card" 
+                style={{ 
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "18px",
+                  cursor: "pointer", 
+                  textAlign: "left", 
+                  background: "#ffffff", 
+                  border: "1px solid #cbd5e1", 
+                  borderRadius: "12px", 
+                  padding: "28px", 
+                  boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  width: "100%",
+                  boxSizing: "border-box"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-3px)";
+                  e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "none";
+                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
+                }}
+              >
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#f1f5f9",
+                  color: "#0f172a",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  flexShrink: 0
+                }}>
+                  <PieIcon />
+                </div>
+                <div>
+                  <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>GPC Breakdown</h3>
+                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
+                    <li>Compare privacy compliance before and after GPC signals</li>
+                    <li>Examine GPP string segments and US Privacy Strings (USPS)</li>
+                    <li>Monitor changes in Optanon / OneTrust consent cookies</li>
+                  </ul>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => goToSection("table")} 
+                className="card" 
+                style={{ 
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "18px",
+                  cursor: "pointer", 
+                  textAlign: "left", 
+                  background: "#ffffff", 
+                  border: "1px solid #cbd5e1", 
+                  borderRadius: "12px", 
+                  padding: "28px", 
+                  boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  width: "100%",
+                  boxSizing: "border-box"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-3px)";
+                  e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "none";
+                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
+                }}
+              >
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#f1f5f9",
+                  color: "#0f172a",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  flexShrink: 0
+                }}>
+                  <TableIcon />
+                </div>
+                <div>
+                  <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Data Table</h3>
+                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
+                    <li>Search and query specific site URLs across datasets</li>
+                    <li>Customize visible columns for targeted research</li>
+                    <li>Export custom-filtered web crawl data to CSV format</li>
+                  </ul>
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!showOverview && (
+          <ReasonTrendsChart
+            viewMode={viewMode}
+            tableContent={tableContent}
+            timePeriods={TIME_PERIODS}
+            stateMonths={STATE_MONTHS}
+            selectedSeries={chartFilters.selectedSeries}
+            setSelectedSeries={setChartSelectedSeries}
+            selectedStates={chartFilters.selectedStates}
+            setSelectedStates={setChartSelectedStates}
+            chartType={chartType}
+            setChartType={setChartType}
+            activeChart={activeChart}
+            setActiveChart={setActiveChart}
+            setCurrentPage={setCurrentPage}
+            gppSection={
+              <LazyOnView
+                fallback={
+                  <div
+                    className="card card--padded section"
+                    style={{ minHeight: 360 }}
+                    aria-hidden="true"
+                  />
+                }
+              >
+                <Suspense
+                  fallback={
+                    <div
+                      className="card card--padded section"
+                      style={{ minHeight: 360 }}
+                    >
+                      <p className="muted-text">Loading GPC breakdown…</p>
+                    </div>
+                  }
+                >
+                  <BeforeAfterBreakdown
+                    timePeriods={TIME_PERIODS}
+                    stateMonths={STATE_MONTHS}
+                  />
+                </Suspense>
+              </LazyOnView>
+            }
+          />
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
