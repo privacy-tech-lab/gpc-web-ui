@@ -480,7 +480,21 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 {!loading && !error && selectedStates.length > 0 && (
                   <>
                     <div className="chart-area">
-                      {chartType === "line" ? <Line ref={chartRef} data={{ labels, datasets }} options={options} /> : <Bar ref={chartRef} data={{ labels, datasets }} options={options} />}
+                      {chartType === "line" ? (
+                        <Line
+                          ref={chartRef}
+                          data={{ labels, datasets }}
+                          options={options}
+                          aria-label="Line chart showing schema classification trends over months"
+                        />
+                      ) : (
+                        <Bar
+                          ref={chartRef}
+                          data={{ labels, datasets }}
+                          options={options}
+                          aria-label="Bar chart showing schema classification trends over months"
+                        />
+                      )}
                     </div>
                     <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
                       <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
