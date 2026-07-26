@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./../App.css";
 
 function HamburgerIcon() {
@@ -56,8 +56,8 @@ const NAV_ITEMS = [
     },
     {
         id: "gpp",
-        label: "GPP Breakdown",
-        description: "View the GPP section breakdown chart.",
+        label: "GPC Breakdown",
+        description: "View the GPC section breakdown chart.",
         Icon: PieIcon,
     },
     {
@@ -70,6 +70,23 @@ const NAV_ITEMS = [
 
 export default function SideNav({ activeSectionId, onNavigate }) {
     const [open, setOpen] = useState(false);
+    const navRef = useRef(null); // Reference to track the navbar element
+
+    // Handle clicking outside the navbar to close it
+    useEffect(() => {
+        function handleClickOutside(event) {
+            // Close the navbar if it's open and the user clicked outside of it
+            if (open && navRef.current && !navRef.current.contains(event.target)) {
+                setOpen(false);
+            }
+        }
+
+        // Use mousedown for faster response than click
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [open]);
 
     function handleNavigate(id) {
         onNavigate(id);
@@ -78,6 +95,7 @@ export default function SideNav({ activeSectionId, onNavigate }) {
 
     return (
         <nav
+            ref={navRef} // Connect the reference to the nav wrapper
             className={`side-nav ${open ? "side-nav--expanded" : ""}`}
             aria-label="Section navigation"
         >
