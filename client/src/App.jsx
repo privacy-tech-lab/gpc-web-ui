@@ -943,30 +943,32 @@ function App() {
             overflow-x: hidden !important;
           }
 
-          /* 3. Sticky side navbar pinned flush to left edge */
+          /* 3. Fixed side navbar floating overlaying the page */
           .side-nav {
-            position: sticky !important;
+            position: fixed !important;
             top: 0 !important;
             left: 0 !important;
             height: 100vh !important;
-            flex-shrink: 0 !important;
             width: 60px !important;
             transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
             overflow-x: hidden !important;
-            z-index: 100 !important;
+            z-index: 1000 !important;
             box-sizing: border-box !important;
           }
 
           .side-nav.side-nav--expanded,
           .side-nav--expanded {
             width: 260px !important;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.15) !important;
           }
 
+          /* 4. Main content container offset by the collapsed sidebar width */
           .app-container {
             flex: 1 1 auto !important;
             min-width: 0 !important;
             box-sizing: border-box !important;
             padding: 24px !important;
+            margin-left: 60px !important;
           }
 
           #table-scroll table {
