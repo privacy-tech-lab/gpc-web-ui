@@ -59,6 +59,17 @@ const SPECIAL_SERIES_DESCRIPTIONS = {
 
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
 
+// These four are mutually exclusive classifications of a site's GPC
+// compliance result — a site can only be one of them. The chips act as
+// logical ANDs, so in table view (where they gate which rows show) only one
+// may be active at a time.
+const MUTUALLY_EXCLUSIVE_SERIES = new Set([
+  COMPLIANCE_SERIES.DOES_NOT_HONOR,
+  COMPLIANCE_SERIES.HONORS,
+  COMPLIANCE_SERIES.NA_INVALID,
+  SPECIAL_SERIES.NULL_SITES,
+]);
+
 function normalizeRow(row) {
   const normalized = {};
   Object.keys(row || {}).forEach(key => { normalized[String(key).trim()] = row[key]; });
@@ -100,6 +111,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   setActiveChart,
   gppSection,
   setCurrentPage,
+  tableSelectedState,
 }) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
@@ -255,6 +267,52 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     ];
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
   }, [schemaSeriesMeta]);
+
+  // Chart view lets multiple GPP states/statuses be selected at once for
+  // comparison, but table view's AND-filter semantics mean carrying that
+  // over almost always yields zero rows — so on the graph-to-table
+  // transition, drop whatever GPP tokens were selected and start over from
+  // just usnat's Sale opted_out (mirrors the GPP-toggle-on default in
+  // table view). Non-GPP selections are left alone.
+  //
+  // The CSV fetch that populates seriesOptions isn't gated by viewMode, so
+  // it can still be in flight when the user switches to table view (e.g.
+  // jumping straight to "Data Table" from the sidebar). gppResetArmedRef
+  // stays true across re-renders from the moment of the transition until a
+  // reset is actually applied, so a switch that lands mid-fetch still gets
+  // its default applied once loading finishes, instead of firing once with
+  // an empty seriesOptions and never trying again.
+  const prevViewModeRef = useRef(viewMode);
+  const gppResetArmedRef = useRef(false);
+  useEffect(() => {
+    const prevViewMode = prevViewModeRef.current;
+    prevViewModeRef.current = viewMode;
+
+    if (viewMode !== "table") {
+      gppResetArmedRef.current = false;
+      return;
+    }
+    if (prevViewMode === "graph") gppResetArmedRef.current = true;
+    if (!gppResetArmedRef.current || loading) return;
+    gppResetArmedRef.current = false;
+
+    const natSaleOptedOut = seriesOptions
+      .map(o => o.key)
+      .find(key => {
+        const parsed = parseSchemaToken(key);
+        return (
+          parsed?.family === "gpp" &&
+          (parsed.state === "US" || parsed.state === "usnat") &&
+          parsed.field === "SaleOptOut" &&
+          parsed.status === "opted_out"
+        );
+      });
+
+    setSelectedSeries(prev => {
+      const nonGpp = prev.filter(k => !k.startsWith("gpp|"));
+      return natSaleOptedOut ? [...nonGpp, natSaleOptedOut] : nonGpp;
+    });
+  }, [viewMode, seriesOptions, loading, setSelectedSeries]);
 
   function shadeHex(hex, percent) {
     if (!hex || hex[0] !== "#") return hex;
@@ -530,9 +588,18 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             <ChartSchemaFilterPanel
               seriesOptions={seriesOptions}
               selectedSeries={selectedSeries}
-              selectedStates={selectedStates}
+              selectedStates={
+                viewMode === "table" && tableSelectedState
+                  ? [tableSelectedState]
+                  : selectedStates
+              }
               onToggle={k => {
-                setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k]);
+                setSelectedSeries(prev => {
+                  if (viewMode === "table" && MUTUALLY_EXCLUSIVE_SERIES.has(k) && !prev.includes(k)) {
+                    return [...prev.filter(s => !MUTUALLY_EXCLUSIVE_SERIES.has(s)), k];
+                  }
+                  return prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k];
+                });
                 setCurrentPage?.(1);
               }}
               viewMode={viewMode}

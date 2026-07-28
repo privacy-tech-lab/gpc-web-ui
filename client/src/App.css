@@ -1032,39 +1032,11 @@ tbody tr:hover td.col-sticky {
   color: var(--brand);
 }
 
-.sfp__state-chip--on {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
-}
-
+.sfp__state-chip--on,
 .sfp__state-chip--partial {
-  background: #dcfce7;
-  border-color: var(--brand);
-  color: #15803d;
-}
-
-.sfp__state-expand {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid #cbd5e0;
-  background: #f8fafc;
-  color: #94a3b8;
-  font-size: 9px;
-  cursor: pointer;
-  padding: 0;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.sfp__state-expand:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-  background: #f0fdf4;
+  background: #04b90e22;
+  border-color: #04b90e;
+  color: #07122b;
 }
 
 /* ── GPP expanded field detail ── */
@@ -1327,21 +1299,13 @@ body {
 .side-nav__toggle {
   align-self: flex-start;
   margin: 0 0 12px 18px;
-  background: none;
-  border: none;
-  color: var(--muted, #64748b);
-  cursor: pointer;
   padding: 6px;
-  border-radius: 6px;
-  transition: background-color 0.15s, color 0.15s;
+  color: var(--muted);
+  display: inline-flex;
 }
 
 .side-nav--expanded .side-nav__toggle {
   color: var(--brand, #228b22);
-}
-
-.side-nav__toggle:hover {
-  background: var(--bg, #f1f5f9);
 }
 
 .side-nav__list {

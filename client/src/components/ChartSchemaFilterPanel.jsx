@@ -151,6 +151,7 @@ export default function ChartSchemaFilterPanel({
             selectedSchemaTokens={selectedSchemaTokens}
             geoStates={selectedStates}
             onChange={handleSchemaTokenChange}
+            viewMode={viewMode}
           />
         </div>
       )}

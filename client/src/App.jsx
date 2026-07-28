@@ -766,8 +766,12 @@ function App() {
             id="state-select"
             value={selectedState}
             onChange={(e) => {
-              setSelectedState(e.target.value);
+              const nextState = e.target.value;
+              setSelectedState(nextState);
               setCurrentPage(1);
+              setChartSelectedStates((prev) =>
+                prev.includes(nextState) ? prev : [...prev, nextState],
+              );
             }}
             style={{ margin: 0 }}
           >
@@ -1189,6 +1193,7 @@ function App() {
         setSelectedSeries={setChartSelectedSeries}
         selectedStates={chartFilters.selectedStates}
         setSelectedStates={setChartSelectedStates}
+        tableSelectedState={selectedState}
         chartType={chartType}
         setChartType={setChartType}
         activeChart={activeChart}

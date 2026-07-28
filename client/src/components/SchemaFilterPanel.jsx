@@ -24,6 +24,50 @@ const GPP_STATE_NAMES = {
   OR: "usor",
 };
 
+// Inverse of GPP_STATE_NAMES — the raw GPP "section" field now comes through
+// as the technical segment name directly (e.g. "usca") rather than the old
+// 2-letter state code (e.g. "CA"). This normalizes either shape to the
+// 2-letter code so state comparisons/filtering keep working regardless of
+// which format the underlying data uses.
+const GPP_SECTION_TO_STATE_CODE = Object.fromEntries(
+  Object.entries(GPP_STATE_NAMES).map(([code, section]) => [section, code])
+);
+
+function normalizeStateCode(state) {
+  return GPP_SECTION_TO_STATE_CODE[state] || state;
+}
+
+// Which GPP fields exist for a given section, per spec. State-specific
+// sections: CA carries Sale + Sharing; every other state carries Sale +
+// Targeted Ads (not Sharing). The usnat section's fields depend on which
+// state it's paired with — alongside CA it carries only Sale + Sharing
+// (matching usca), alongside CO/CT/NJ/etc. it carries all three. This is
+// deliberately independent of which fields happen to have tokens in the
+// currently-loaded data, so the breakdown stays consistent even if a given
+// crawl period has no classified sites for a field.
+const NAT_ALL_FIELDS = ["SaleOptOut", "SharingOptOut", "TargetedAdvertisingOptOut"];
+const NAT_CA_FIELDS = ["SaleOptOut", "SharingOptOut"];
+const STATE_CA_FIELDS = ["SaleOptOut", "SharingOptOut"];
+const STATE_OTHER_FIELDS = ["SaleOptOut", "TargetedAdvertisingOptOut"];
+
+function stateFieldsForState(state) {
+  return normalizeStateCode(state) === "CA" ? STATE_CA_FIELDS : STATE_OTHER_FIELDS;
+}
+
+function natFieldsForGeoStates(geoStates) {
+  const normalized = (Array.isArray(geoStates) ? geoStates : [])
+    .map(normalizeStateCode)
+    .filter((s) => s !== "US");
+  const onlyCA = normalized.length > 0 && normalized.every((s) => s === "CA");
+  return onlyCA ? NAT_CA_FIELDS : NAT_ALL_FIELDS;
+}
+
+function fieldsForState(state, geoStates) {
+  return normalizeStateCode(state) === "US"
+    ? natFieldsForGeoStates(geoStates)
+    : stateFieldsForState(state);
+}
+
 const STATUS_CONFIG = [
   { key: "opted_out",       label: "Opted Out",      cls: "sfp__pill--green" },
   { key: "did_not_opt_out", label: "Did Not Opt Out",cls: "sfp__pill--red"   },
@@ -65,9 +109,11 @@ function partitionGpp(allTokens) {
 
 function sortedStates(stateMap) {
   return Object.keys(stateMap).sort((a, b) => {
-    if (a === "US") return -1;
-    if (b === "US") return 1;
-    return a.localeCompare(b);
+    const na = normalizeStateCode(a);
+    const nb = normalizeStateCode(b);
+    if (na === "US") return -1;
+    if (nb === "US") return 1;
+    return na.localeCompare(nb);
   });
 }
 
@@ -88,58 +134,62 @@ function PowerToggle({ on, onClick, label }) {
 }
 
 function StatusPills({ subset, selectedSet, onToggle, size }) {
+  const visible = STATUS_CONFIG.filter((s) => statusTokens(subset, s.key).length > 0);
   return (
     <div className="sfp__statuses">
-      {STATUS_CONFIG.filter((s) => statusTokens(subset, s.key).length > 0).map(
-        ({ key: sk, label: sl, cls }) => {
-          const st = statusTokens(subset, sk);
-          const allOn = st.length > 0 && st.every((t) => selectedSet.has(t));
-          const anyOn = st.some((t) => selectedSet.has(t));
-          const color = (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || "#666";
-          const activeBg = allOn ? `${color}22` : undefined;
-          const textColor = allOn ? "#07122b" : color;
-          return (
-            <button
-              key={sk}
-              className={[
-                "sfp__status-pill",
-                cls,
-                size === "sm" ? "sfp__status-pill--sm" : "",
-                allOn ? "sfp__status-pill--on" : "",
-                anyOn && !allOn ? "sfp__status-pill--partial" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => onToggle(st, allOn)}
-              style={{
-                borderColor: color,
-                color: textColor,
-                background: activeBg,
-              }}
-            >
-              {sl}
-              {anyOn && !allOn ? " ◑" : ""}
-            </button>
-          );
-        }
-      )}
+      {visible.map(({ key: sk, label: sl, cls }) => {
+        const st = statusTokens(subset, sk);
+        const allOn = st.length > 0 && st.every((t) => selectedSet.has(t));
+        const anyOn = st.some((t) => selectedSet.has(t));
+        const siblingTokens = visible
+          .filter((s) => s.key !== sk)
+          .flatMap((s) => statusTokens(subset, s.key));
+        const color = (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || "#666";
+        const activeBg = allOn ? `${color}22` : undefined;
+        const textColor = allOn ? "#07122b" : color;
+        return (
+          <button
+            key={sk}
+            className={[
+              "sfp__status-pill",
+              cls,
+              size === "sm" ? "sfp__status-pill--sm" : "",
+              allOn ? "sfp__status-pill--on" : "",
+              anyOn && !allOn ? "sfp__status-pill--partial" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={() => onToggle(st, allOn, siblingTokens)}
+            style={{
+              borderColor: color,
+              color: textColor,
+              background: activeBg,
+            }}
+          >
+            {sl}
+            {anyOn && !allOn ? " ◑" : ""}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 // ─── GPP Card ─────────────────────────────────────────────────────────────────
 
-function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels, isOn }) {
-  const [expandedStates, setExpandedStates] = useState(new Set());
+function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onReplace, labels, isOn, geoStates, viewMode }) {
   const gppMap = useMemo(() => partitionGpp(tokens), [tokens]);
-  const states = useMemo(() => sortedStates(gppMap), [gppMap]);
+  const states = useMemo(() => {
+    const all = sortedStates(gppMap);
+    if (!Array.isArray(geoStates) || geoStates.length === 0) return all;
+    const relevant = new Set(["US", ...geoStates]);
+    return all.filter((s) => relevant.has(normalizeStateCode(s)));
+  }, [gppMap, geoStates]);
 
   const getExpectedTokensForState = (state) => {
     const stateObj = gppMap[state] || {};
     const expectedTokens = [];
-    const orderedFields = ["SaleOptOut", "SharingOptOut", "TargetedAdvertisingOptOut"].filter(
-      (f) => stateObj[f]
-    );
+    const orderedFields = fieldsForState(state, geoStates);
     orderedFields.forEach((field) => {
       ["opted_out", "did_not_opt_out", "invalid_missing", "not_applicable"].forEach((sk) => {
         expectedTokens.push(stateObj[field]?.[sk] || `gpp|${state}|${field}|${sk}`);
@@ -148,9 +198,13 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
     return expectedTokens;
   };
 
-  function toggleFamilyStatus(subset, allOn) {
-    if (allOn) onRemove(subset);
-    else onAdd(subset);
+  function toggleSingleToken(token, isActive, siblingTokens) {
+    if (viewMode === "table" && !isActive && siblingTokens?.length > 0) {
+      onReplace([token], siblingTokens);
+      return;
+    }
+    if (isActive) onRemove([token]);
+    else onAdd([token]);
   }
 
   function toggleState(state) {
@@ -158,25 +212,26 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
     const anyOn = stateTokens.some((t) => selectedSet.has(t));
     if (anyOn) {
       onRemove(stateTokens);
-    } else {
-      // Default: opted_out tokens for this state
-      const toAdd = stateTokens.filter((t) => t.endsWith("|opted_out"));
-      onAdd(toAdd.length > 0 ? toAdd : stateTokens);
+      return;
     }
-  }
-
-  function toggleStateExpand(state) {
-    setExpandedStates((prev) => {
-      const next = new Set(prev);
-      if (next.has(state)) next.delete(state);
-      else next.add(state);
-      return next;
+    // Default: just Sale opted_out for this state
+    const toAdd = stateTokens.filter((t) => {
+      const parsed = parseSchemaToken(t);
+      return parsed?.field === "SaleOptOut" && parsed?.status === "opted_out";
     });
-  }
-
-  function toggleSingleToken(token, isActive) {
-    if (isActive) onRemove([token]);
-    else onAdd([token]);
+    const nextTokens = toAdd.length > 0 ? toAdd : stateTokens;
+    // Most sites only ever have a usnat OR a state-specific GPP string, not
+    // both — in table view (an AND filter over rows) selecting usnat and a
+    // state chip together would almost always yield zero rows, so only one
+    // state chip may be active at a time there.
+    if (viewMode === "table") {
+      const siblingTokens = states
+        .filter((s) => s !== state)
+        .flatMap((s) => getExpectedTokensForState(s));
+      onReplace(nextTokens, siblingTokens);
+      return;
+    }
+    onAdd(nextTokens);
   }
 
   const stateButtonClass = (state) => {
@@ -188,6 +243,15 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
     return "sfp__state-chip";
   };
 
+  const hasActiveSelection = (state) =>
+    getExpectedTokensForState(state).some((t) => selectedSet.has(t));
+
+  // Only show the field breakdown for states with an active selection —
+  // table view keeps at most one state chip selected at a time (see
+  // toggleState), so this naturally narrows to just that chip there, while
+  // chart view can still show several side by side when multiple are on.
+  const detailStates = states.filter(hasActiveSelection);
+
   return (
     <div className={`sfp__family-card sfp__family-card--gpp ${isOn ? "sfp__family-card--on" : ""}`}>
       {/* Clean header layout matching standard card structures */}
@@ -198,13 +262,6 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
 
       {isOn && (
         <div className="sfp__gpp-body">
-          {/* Status Pills are moved down here so they don't break header toggle alignments */}
-          <StatusPills
-            subset={tokens}
-            selectedSet={selectedSet}
-            onToggle={toggleFamilyStatus}
-          />
-
           {/* State chips */}
           <div className="sfp__gpp-states" style={{ marginTop: "12px" }}>
             {states.map((state) => (
@@ -216,34 +273,16 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
                 >
                   {GPP_STATE_NAMES[state] || state.toLowerCase()}
                 </button>
-                {getExpectedTokensForState(state).some((t) => selectedSet.has(t)) && (
-                  <button
-                    className="sfp__state-expand"
-                    onClick={() => toggleStateExpand(state)}
-                    aria-label={`${expandedStates.has(state) ? "Collapse" : "Expand"} ${state} details`}
-                    title={`${expandedStates.has(state) ? "Hide" : "Show"} ${state} field breakdown`}
-                  >
-                    {expandedStates.has(state) ? "▲" : "▼"}
-                  </button>
-                )}
               </div>
             ))}
           </div>
 
-          {/* Expanded field breakdown */}
-          {states.some((s) => expandedStates.has(s)) && (
+          {/* Field breakdown — shown only for states with an active selection */}
+          {detailStates.length > 0 && (
             <div className="sfp__gpp-detail">
-              {states.map((state) => {
-                if (!expandedStates.has(state)) return null;
+              {detailStates.map((state) => {
                 const stateObj = gppMap[state] || {};
-                const GPP_FIELD_ORDER = [
-                  "SaleOptOut",
-                  "SharingOptOut",
-                  "TargetedAdvertisingOptOut",
-                ];
-                const orderedFields = GPP_FIELD_ORDER.filter(
-                  (f) => stateObj[f]
-                );
+                const orderedFields = fieldsForState(state, geoStates);
 
                 return (
                   <div key={state} className="sfp__gpp-state-detail">
@@ -255,11 +294,18 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
                             {GPP_FIELD_SHORT[field] || field}
                           </span>
                           <div className="sfp__gpp-field-pills">
-                            {STATUS_CONFIG.filter((sc) =>
-                              ["opted_out", "did_not_opt_out", "invalid_missing", "not_applicable"].includes(sc.key)
-                            ).map(({ key: sk, label: sl, cls }) => {
-                              const token = stateObj[field]?.[sk] || `gpp|${state}|${field}|${sk}`;
+                            {(() => {
+                              const fieldStatuses = STATUS_CONFIG.filter((sc) =>
+                                ["opted_out", "did_not_opt_out", "invalid_missing", "not_applicable"].includes(sc.key)
+                              );
+                              const fieldToken = (sk) => stateObj[field]?.[sk] || `gpp|${state}|${field}|${sk}`;
+                              return fieldStatuses.map(({ key: sk, label: sl, cls }) => {
+                              const token = fieldToken(sk);
                               const active = selectedSet.has(token);
+                              const siblingTokens = fieldStatuses
+                                .filter((sc) => sc.key !== sk)
+                                .map((sc) => fieldToken(sc.key));
+                              const color = (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || "#666";
                               return (
                                 <Tooltip
                                   key={sk}
@@ -272,18 +318,19 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, labels,
                                       cls,
                                       active ? "sfp__status-pill--on" : "",
                                     ].join(" ")}
-                                    onClick={() => toggleSingleToken(token, active)}
+                                    onClick={() => toggleSingleToken(token, active, siblingTokens)}
                                     style={{
-                                      borderColor: (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
-                                      color: active ? undefined : (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined,
-                                      background: active ? (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || undefined : undefined,
+                                      borderColor: color,
+                                      color: active ? "#07122b" : color,
+                                      background: active ? `${color}22` : undefined,
                                     }}
                                   >
                                     {sl}
                                   </button>
                                 </Tooltip>
                               );
-                            })}
+                              });
+                            })()}
                           </div>
                         </div>
                       ))}
@@ -305,7 +352,8 @@ export default function SchemaFilterPanel({
   schemaFilterMeta,
   selectedSchemaTokens,
   onChange,
-  geoStates, 
+  geoStates,
+  viewMode,
 }) {
   const [expandedFamilies, setExpandedFamilies] = useState(new Set());
   const { tokens, labels } = schemaFilterMeta;
@@ -346,6 +394,15 @@ export default function SchemaFilterPanel({
     onChange(selectedSchemaTokens.filter((t) => !removeSet.has(t)));
   }
 
+  // Atomically swap toRemove out for toAdd in one onChange call — calling
+  // remove() then add() separately would each compute off the same stale
+  // selectedSchemaTokens closure and the second call would undo the first.
+  function replaceStatus(toAdd, toRemove) {
+    const removeSet = new Set(toRemove);
+    const kept = selectedSchemaTokens.filter((t) => !removeSet.has(t));
+    onChange([...new Set([...kept, ...toAdd])]);
+  }
+
   function toggleFamily(familyKey) {
     const ft = familyTokens(tokens, familyKey);
     const isOn = expandedFamilies.has(familyKey);
@@ -358,34 +415,48 @@ export default function SchemaFilterPanel({
         next.delete(familyKey);
         return next;
       });
-    } else {
-      setExpandedFamilies((prev) => {
-        const next = new Set(prev);
-        next.add(familyKey);
-        return next;
-      });
-
-      let toAdd;
-      if (familyKey === "gpp" && Array.isArray(geoStates) && geoStates.length > 0) {
-        const relevantStates = new Set(["US", ...geoStates]);
-        toAdd = ft.filter((t) => {
-          const parsed = parseSchemaToken(t);
-          return (
-            parsed?.family === "gpp" &&
-            relevantStates.has(parsed.state) &&
-            parsed.status === "opted_out"
-          );
-        });
-        if (toAdd.length === 0) toAdd = statusTokens(ft, "opted_out");
-      } else {
-        toAdd = statusTokens(ft, "opted_out");
-      }
-
-      add(toAdd.length > 0 ? toAdd : ft);
+      return;
     }
+
+    setExpandedFamilies((prev) => {
+      const next = new Set(prev);
+      next.add(familyKey);
+      return next;
+    });
+
+    if (familyKey === "gpp") {
+      // Default to just Sale opted_out — usnat only in table view (its
+      // AND-filter semantics mean one state/status is all that makes
+      // sense), or every relevant state in chart view. This mirrors the
+      // per-state-chip default so turning GPP on via the power toggle
+      // isn't a bigger jump than clicking an individual state chip.
+      const relevantStates =
+        viewMode === "table"
+          ? new Set(["US"])
+          : Array.isArray(geoStates) && geoStates.length > 0
+            ? new Set(["US", ...geoStates])
+            : null;
+
+      const saleOptedOut = ft.filter((t) => {
+        const parsed = parseSchemaToken(t);
+        return parsed?.family === "gpp" && parsed.field === "SaleOptOut" && parsed.status === "opted_out";
+      });
+      const scoped = relevantStates
+        ? saleOptedOut.filter((t) => relevantStates.has(normalizeStateCode(parseSchemaToken(t).state)))
+        : saleOptedOut;
+      add(scoped.length > 0 ? scoped : saleOptedOut);
+      return;
+    }
+
+    const toAdd = statusTokens(ft, "opted_out");
+    add(toAdd.length > 0 ? toAdd : ft);
   }
 
-  function toggleStatusPills(subset, allOn) {
+  function toggleStatusPills(subset, allOn, siblingTokens) {
+    if (viewMode === "table" && !allOn && siblingTokens?.length > 0) {
+      replaceStatus(subset, siblingTokens);
+      return;
+    }
     if (allOn) remove(subset);
     else add(subset);
   }
@@ -432,8 +503,11 @@ export default function SchemaFilterPanel({
           onToggleFamily={toggleFamily}
           onAdd={add}
           onRemove={remove}
+          onReplace={replaceStatus}
           labels={labels}
           isOn={expandedFamilies.has("gpp")}
+          geoStates={geoStates}
+          viewMode={viewMode}
         />
       )}
     </div>
