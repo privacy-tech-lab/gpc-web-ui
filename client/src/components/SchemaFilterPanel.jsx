@@ -39,14 +39,12 @@ function normalizeStateCode(state) {
 
 // Which GPP fields exist for a given section, per spec. State-specific
 // sections: CA carries Sale + Sharing; every other state carries Sale +
-// Targeted Ads (not Sharing). The usnat section's fields depend on which
-// state it's paired with — alongside CA it carries only Sale + Sharing
-// (matching usca), alongside CO/CT/NJ/etc. it carries all three. This is
-// deliberately independent of which fields happen to have tokens in the
-// currently-loaded data, so the breakdown stays consistent even if a given
-// crawl period has no classified sites for a field.
+// Targeted Ads (not Sharing). usnat always carries all three, regardless of
+// which state it's paired with. This is deliberately independent of which
+// fields happen to have tokens in the currently-loaded data, so the
+// breakdown stays consistent even if a given crawl period has no classified
+// sites for a field.
 const NAT_ALL_FIELDS = ["SaleOptOut", "SharingOptOut", "TargetedAdvertisingOptOut"];
-const NAT_CA_FIELDS = ["SaleOptOut", "SharingOptOut"];
 const STATE_CA_FIELDS = ["SaleOptOut", "SharingOptOut"];
 const STATE_OTHER_FIELDS = ["SaleOptOut", "TargetedAdvertisingOptOut"];
 
@@ -54,18 +52,8 @@ function stateFieldsForState(state) {
   return normalizeStateCode(state) === "CA" ? STATE_CA_FIELDS : STATE_OTHER_FIELDS;
 }
 
-function natFieldsForGeoStates(geoStates) {
-  const normalized = (Array.isArray(geoStates) ? geoStates : [])
-    .map(normalizeStateCode)
-    .filter((s) => s !== "US");
-  const onlyCA = normalized.length > 0 && normalized.every((s) => s === "CA");
-  return onlyCA ? NAT_CA_FIELDS : NAT_ALL_FIELDS;
-}
-
-function fieldsForState(state, geoStates) {
-  return normalizeStateCode(state) === "US"
-    ? natFieldsForGeoStates(geoStates)
-    : stateFieldsForState(state);
+function fieldsForState(state) {
+  return normalizeStateCode(state) === "US" ? NAT_ALL_FIELDS : stateFieldsForState(state);
 }
 
 const STATUS_CONFIG = [
@@ -81,6 +69,28 @@ const GPP_FIELD_SHORT = {
   SharingOptOut:             "Sharing",
   TargetedAdvertisingOptOut: "Targeted Ads",
 };
+
+// usnat always exposes all three fields, but Sharing/Targeted Ads don't
+// legally apply the same way for every state — called out in chart view
+// where multiple states' usnat context can be compared side by side.
+const GPP_USNAT_FIELD_NOTES = {
+  SharingOptOut:             "Only legally applies to CA",
+  TargetedAdvertisingOptOut: "Does not legally apply to CA",
+};
+
+// Table view scopes usnat to a single paired state, so the note can name
+// that state specifically instead of speaking generically about CA.
+const GPP_USNAT_TABLE_SHARING_EXCEPTIONS = new Set(["CT", "CO", "NJ"]);
+
+function usnatTableFieldNote(field, tableState) {
+  if (field === "SharingOptOut" && GPP_USNAT_TABLE_SHARING_EXCEPTIONS.has(tableState)) {
+    return `Does not legally apply to ${tableState}`;
+  }
+  if (field === "TargetedAdvertisingOptOut" && tableState === "CA") {
+    return "Does not legally apply to CA";
+  }
+  return null;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,7 +199,7 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
   const getExpectedTokensForState = (state) => {
     const stateObj = gppMap[state] || {};
     const expectedTokens = [];
-    const orderedFields = fieldsForState(state, geoStates);
+    const orderedFields = fieldsForState(state);
     orderedFields.forEach((field) => {
       ["opted_out", "did_not_opt_out", "invalid_missing", "not_applicable"].forEach((sk) => {
         expectedTokens.push(stateObj[field]?.[sk] || `gpp|${state}|${field}|${sk}`);
@@ -282,16 +292,29 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
             <div className="sfp__gpp-detail">
               {detailStates.map((state) => {
                 const stateObj = gppMap[state] || {};
-                const orderedFields = fieldsForState(state, geoStates);
+                const orderedFields = fieldsForState(state);
 
                 return (
                   <div key={state} className="sfp__gpp-state-detail">
                     <span className="sfp__gpp-state-label" title={state}>{GPP_STATE_NAMES[state] || state.toLowerCase()}</span>
                     <div className="sfp__gpp-fields">
-                      {orderedFields.map((field) => (
+                      {orderedFields.map((field) => {
+                        let usnatNote = null;
+                        if (normalizeStateCode(state) === "US") {
+                          usnatNote =
+                            viewMode === "table"
+                              ? usnatTableFieldNote(field, normalizeStateCode(geoStates?.[0]))
+                              : GPP_USNAT_FIELD_NOTES[field];
+                        }
+                        return (
                         <div key={field} className="sfp__gpp-field-row">
                           <span className="sfp__gpp-field-label">
                             {GPP_FIELD_SHORT[field] || field}
+                            {usnatNote && (
+                              <Tooltip content={usnatNote} position="top">
+                                <span className="sfp__gpp-field-note" aria-label={usnatNote}> *</span>
+                              </Tooltip>
+                            )}
                           </span>
                           <div className="sfp__gpp-field-pills">
                             {(() => {
@@ -333,7 +356,8 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
                             })()}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );

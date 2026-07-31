@@ -1052,9 +1052,15 @@ tbody tr:hover td.col-sticky {
 
 .sfp__gpp-state-detail {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.sfp__gpp-state-detail + .sfp__gpp-state-detail {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
 }
 
 .sfp__gpp-state-label {
@@ -1063,29 +1069,33 @@ tbody tr:hover td.col-sticky {
   color: #374151;
   letter-spacing: 0.04em;
   min-width: 28px;
-  padding-top: 5px;
 }
 
 .sfp__gpp-fields {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 16px;
   flex: 1;
 }
 
 .sfp__gpp-field-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-left: 10px;
 }
 
 .sfp__gpp-field-label {
   font-size: 11px;
   font-weight: 600;
   color: #6b7280;
-  min-width: 80px;
-  text-align: right;
+}
+
+.sfp__gpp-field-note {
+  color: #d97706;
+  font-weight: 800;
+  cursor: help;
 }
 
 .sfp__gpp-field-pills {
@@ -1113,11 +1123,6 @@ tbody tr:hover td.col-sticky {
   .sfp__family-header {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .sfp__gpp-field-label {
-    min-width: 60px;
-    text-align: left;
   }
 }
 
