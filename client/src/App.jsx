@@ -198,23 +198,18 @@ function App() {
   const pickerBtnRef = useRef(null);
   const pickerPanelRef = useRef(null);
 
-  const [chartFilters, setChartFilters] = useState(() => ({
-    selectedSeries: getArrayParam(["cseries"], []),
-    selectedStates: getArrayParam(["cstates"], ["CA"]),
-  }));
+  // Graph default: "Likely Does Not Honor GPC"
+  const [graphSelectedSeries, setGraphSelectedSeries] = useState(() =>
+    getArrayParam(["cseries"], ["Likely Does Not Honor GPC"]),
+  );
+  // Table default: Nothing ([])
+  const [tableSelectedSeries, setTableSelectedSeries] = useState(() =>
+    getArrayParam(["tseries"], []),
+  );
+  const [selectedStates, setSelectedStates] = useState(() =>
+    getArrayParam(["cstates"], ["CA"]),
+  );
   const [chartType, setChartType] = useState(() => getParam(["ctype"], "line"));
-  const setChartSelectedSeries = (updater) =>
-    setChartFilters((prev) => ({
-      ...prev,
-      selectedSeries:
-        typeof updater === "function" ? updater(prev.selectedSeries) : updater,
-    }));
-  const setChartSelectedStates = (updater) =>
-    setChartFilters((prev) => ({
-      ...prev,
-      selectedStates:
-        typeof updater === "function" ? updater(prev.selectedStates) : updater,
-    }));
 
   // Start background preloading all datasets on boot
   useEffect(() => {
@@ -558,7 +553,7 @@ function App() {
     if (schemaModeUnavailable) return [];
     let base = rowRecords;
 
-    if (chartFilters.selectedSeries && chartFilters.selectedSeries.length > 0) {
+    if (tableSelectedSeries && tableSelectedSeries.length > 0) {
       const matchesSeries = ({ row, schema }, seriesKey) => {
         if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
@@ -567,14 +562,9 @@ function App() {
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
         return schema?.tokens?.includes(seriesKey);
       };
-      base =
-        viewMode === "table"
-          ? base.filter((record) =>
-              chartFilters.selectedSeries.every((seriesKey) => matchesSeries(record, seriesKey)),
-            )
-          : base.filter((record) =>
-              chartFilters.selectedSeries.some((seriesKey) => matchesSeries(record, seriesKey)),
-            );
+      base = base.filter((record) =>
+        tableSelectedSeries.every((seriesKey) => matchesSeries(record, seriesKey)),
+      );
     }
 
     const query = String(searchQuery || "").trim().toLowerCase();
@@ -582,7 +572,7 @@ function App() {
       base = base.filter(({ row }) => getRowSearchValue(row).includes(query));
     }
     return base;
-  }, [rowRecords, schemaModeUnavailable, searchQuery, chartFilters.selectedSeries, viewMode]);
+  }, [rowRecords, schemaModeUnavailable, searchQuery, tableSelectedSeries]);
 
   const filteredRows = useMemo(() => filteredRecords.map((record) => record.row), [filteredRecords]);
 
@@ -754,21 +744,17 @@ function App() {
               const nextState = e.target.value;
               setSelectedState(nextState);
               setCurrentPage(1);
-              setChartSelectedStates((prev) =>
+              setSelectedStates((prev) =>
                 prev.includes(nextState) ? prev : [...prev, nextState],
               );
-              // A state-specific GPP selection (e.g. usca) from the
-              // previously selected state doesn't carry over — it's not one
-              // of the chips shown for the new state, and left selected it
-              // silently ANDs the table down to zero rows. usnat stays
-              // valid regardless of which state is selected, so it's kept.
-              setChartSelectedSeries((prev) =>
+              const filterGpp = (prev) =>
                 prev.filter((k) => {
                   if (!k.startsWith("gpp|")) return true;
                   const gppState = k.split("|")[1];
                   return gppState === "US" || gppState === "usnat";
-                }),
-              );
+                });
+              setGraphSelectedSeries(filterGpp);
+              setTableSelectedSeries(filterGpp);
             }}
             style={{ margin: 0 }}
           >
@@ -1233,10 +1219,12 @@ function App() {
         tableContent={tableContent}
         timePeriods={TIME_PERIODS}
         stateMonths={STATE_MONTHS}
-        selectedSeries={chartFilters.selectedSeries}
-        setSelectedSeries={setChartSelectedSeries}
-        selectedStates={chartFilters.selectedStates}
-        setSelectedStates={setChartSelectedStates}
+        graphSelectedSeries={graphSelectedSeries}
+        setGraphSelectedSeries={setGraphSelectedSeries}
+        tableSelectedSeries={tableSelectedSeries}
+        setTableSelectedSeries={setTableSelectedSeries}
+        selectedStates={selectedStates}
+        setSelectedStates={setSelectedStates}
         tableSelectedState={selectedState}
         chartType={chartType}
         setChartType={setChartType}
