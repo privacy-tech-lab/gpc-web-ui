@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import "./../App.css";
 
 function HamburgerIcon() {
@@ -69,45 +69,23 @@ const NAV_ITEMS = [
 ];
 
 export default function SideNav({ activeSectionId, onNavigate }) {
-    const [open, setOpen] = useState(false);
-    const navRef = useRef(null); // Reference to track the navbar element
-
-    // Handle clicking outside the navbar to close it
-    useEffect(() => {
-        function handleClickOutside(event) {
-            // Close the navbar if it's open and the user clicked outside of it
-            if (open && navRef.current && !navRef.current.contains(event.target)) {
-                setOpen(false);
-            }
-        }
-
-        // Use mousedown for faster response than click
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [open]);
+    const [hovering, setHovering] = useState(false);
+    const open = hovering;
 
     function handleNavigate(id) {
         onNavigate(id);
-        setOpen(false);
     }
 
     return (
         <nav
-            ref={navRef} // Connect the reference to the nav wrapper
             className={`side-nav ${open ? "side-nav--expanded" : ""}`}
             aria-label="Section navigation"
+            onMouseEnter={() => setHovering(true)}
+            onMouseLeave={() => setHovering(false)}
         >
-            <button
-                type="button"
-                className="side-nav__toggle"
-                aria-expanded={open}
-                aria-label={open ? "Close navigation" : "Open navigation"}
-                onClick={() => setOpen((o) => !o)}
-            >
+            <span className="side-nav__toggle" aria-hidden="true">
                 <HamburgerIcon />
-            </button>
+            </span>
 
             <ul className="side-nav__list">
                 {NAV_ITEMS.map(({ id, label, description, Icon }) => (
