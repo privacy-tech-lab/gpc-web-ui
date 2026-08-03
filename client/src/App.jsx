@@ -751,8 +751,24 @@ function App() {
             id="state-select"
             value={selectedState}
             onChange={(e) => {
-              setSelectedState(e.target.value);
+              const nextState = e.target.value;
+              setSelectedState(nextState);
               setCurrentPage(1);
+              setChartSelectedStates((prev) =>
+                prev.includes(nextState) ? prev : [...prev, nextState],
+              );
+              // A state-specific GPP selection (e.g. usca) from the
+              // previously selected state doesn't carry over — it's not one
+              // of the chips shown for the new state, and left selected it
+              // silently ANDs the table down to zero rows. usnat stays
+              // valid regardless of which state is selected, so it's kept.
+              setChartSelectedSeries((prev) =>
+                prev.filter((k) => {
+                  if (!k.startsWith("gpp|")) return true;
+                  const gppState = k.split("|")[1];
+                  return gppState === "US" || gppState === "usnat";
+                }),
+              );
             }}
             style={{ margin: 0 }}
           >
@@ -1211,50 +1227,51 @@ function App() {
           </div>
         )}
 
-        {!showOverview && (
-          <ReasonTrendsChart
-            viewMode={viewMode}
-            tableContent={tableContent}
-            timePeriods={TIME_PERIODS}
-            stateMonths={STATE_MONTHS}
-            selectedSeries={chartFilters.selectedSeries}
-            setSelectedSeries={setChartSelectedSeries}
-            selectedStates={chartFilters.selectedStates}
-            setSelectedStates={setChartSelectedStates}
-            chartType={chartType}
-            setChartType={setChartType}
-            activeChart={activeChart}
-            setActiveChart={setActiveChart}
-            setCurrentPage={setCurrentPage}
-            gppSection={
-              <LazyOnView
-                fallback={
-                  <div
-                    className="card card--padded section"
-                    style={{ minHeight: 360 }}
-                    aria-hidden="true"
-                  />
-                }
-              >
-                <Suspense
-                  fallback={
-                    <div
-                      className="card card--padded section"
-                      style={{ minHeight: 360 }}
-                    >
-                      <p className="muted-text">Loading GPC breakdown…</p>
-                    </div>
-                  }
-                >
-                  <BeforeAfterBreakdown
-                    timePeriods={TIME_PERIODS}
-                    stateMonths={STATE_MONTHS}
-                  />
-                </Suspense>
-              </LazyOnView>
+      {!showOverview && (
+      <ReasonTrendsChart
+        viewMode={viewMode}
+        tableContent={tableContent}
+        timePeriods={TIME_PERIODS}
+        stateMonths={STATE_MONTHS}
+        selectedSeries={chartFilters.selectedSeries}
+        setSelectedSeries={setChartSelectedSeries}
+        selectedStates={chartFilters.selectedStates}
+        setSelectedStates={setChartSelectedStates}
+        tableSelectedState={selectedState}
+        chartType={chartType}
+        setChartType={setChartType}
+        activeChart={activeChart}
+        setActiveChart={setActiveChart}
+        setCurrentPage={setCurrentPage}
+        gppSection={
+          <LazyOnView
+            fallback={
+              <div
+                className="card card--padded section"
+                style={{ minHeight: 360 }}
+                aria-hidden="true"
+              />
             }
-          />
-        )}
+          >
+            <Suspense
+              fallback={
+                <div
+                  className="card card--padded section"
+                  style={{ minHeight: 360 }}
+                >
+                  <p className="muted-text">Loading GPC breakdown…</p>
+                </div>
+              }
+            >
+              <BeforeAfterBreakdown
+                timePeriods={TIME_PERIODS}
+                stateMonths={STATE_MONTHS}
+              />
+            </Suspense>
+          </LazyOnView>
+        }
+      />
+      )}
       </div>
     </div>
   );

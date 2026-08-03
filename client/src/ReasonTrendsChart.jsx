@@ -56,7 +56,44 @@ const SPECIAL_SERIES_DESCRIPTIONS = {
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
 
-const AVAILABLE_STATES = datasetsManifest.states || ["CA", "CT", "CO", "NJ"];
+const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
+
+// These four are mutually exclusive classifications of a site's GPC
+// compliance result — a site can only be one of them. The chips act as
+// logical ANDs, so in table view (where they gate which rows show) only one
+// may be active at a time.
+const MUTUALLY_EXCLUSIVE_SERIES = new Set([
+  COMPLIANCE_SERIES.DOES_NOT_HONOR,
+  COMPLIANCE_SERIES.HONORS,
+  COMPLIANCE_SERIES.NA_INVALID,
+  SPECIAL_SERIES.NULL_SITES,
+]);
+
+function normalizeRow(row) {
+  const normalized = {};
+  Object.keys(row || {}).forEach(key => { normalized[String(key).trim()] = row[key]; });
+  return normalized;
+}
+
+async function parseCsv(publicCsvPath) {
+  const response = await fetch(publicCsvPath);
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${publicCsvPath}`);
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("html")) {
+    throw new Error(`Expected CSV, got HTML for ${publicCsvPath}`);
+  }
+  const text = await response.text();
+  return new Promise((resolve, reject) => {
+    Papa.parse(text, {
+      header: true, skipEmptyLines: true,
+      complete: parsed => resolve({
+        headers: (parsed.meta?.fields || []).map(f => String(f).trim()),
+        rows: (parsed.data || []).map(normalizeRow),
+      }),
+      error: err => reject(err instanceof Error ? err : new Error(String(err))),
+    });
+  });
+}
 
 const ReasonTrendsChart = memo(function ReasonTrendsChart({
   viewMode,
@@ -73,6 +110,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   setActiveChart,
   gppSection,
   setCurrentPage,
+  tableSelectedState,
 }) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
@@ -214,6 +252,18 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     ];
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
   }, [schemaSeriesMeta]);
+
+  // Chart view's multi-select comparisons and table view's AND-filter row
+  // gating want different selections — carrying one view's filters into the
+  // other tends to produce confusing or empty results. So switching views
+  // in either direction clears every selected filter and starts fresh.
+  const prevViewModeRef = useRef(viewMode);
+  useEffect(() => {
+    const prevViewMode = prevViewModeRef.current;
+    prevViewModeRef.current = viewMode;
+    if (prevViewMode === viewMode) return;
+    setSelectedSeries([]);
+  }, [viewMode, setSelectedSeries]);
 
   function shadeHex(hex, percent) {
     if (!hex || hex[0] !== "#") return hex;
@@ -474,22 +524,29 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             )}
           </div>
 
-          {/* RIGHT SIDE: Filters */}
+          {/* RIGHT SIDE: Filters. Flows with the page (no height cap or
+              internal scroll) so a tall filter list just extends the page
+              and every option stays reachable by scrolling normally. */}
           <div
             style={{
               flex: "0 0 350px",
-              position: "sticky",
-              top: "20px",
-              maxHeight: "calc(100vh - 40px)",
-              overflowY: "auto",
             }}
           >
             <ChartSchemaFilterPanel
               seriesOptions={seriesOptions}
               selectedSeries={selectedSeries}
-              selectedStates={selectedStates}
+              selectedStates={
+                viewMode === "table" && tableSelectedState
+                  ? [tableSelectedState]
+                  : selectedStates
+              }
               onToggle={k => {
-                setSelectedSeries(prev => prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k]);
+                setSelectedSeries(prev => {
+                  if (viewMode === "table" && MUTUALLY_EXCLUSIVE_SERIES.has(k) && !prev.includes(k)) {
+                    return [...prev.filter(s => !MUTUALLY_EXCLUSIVE_SERIES.has(s)), k];
+                  }
+                  return prev.includes(k) ? prev.filter(s => s !== k) : [...prev, k];
+                });
                 setCurrentPage?.(1);
               }}
               viewMode={viewMode}

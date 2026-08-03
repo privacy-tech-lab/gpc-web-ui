@@ -54,9 +54,9 @@ const STATUS_RENDER_ORDER = [
 ];
 
 const STATUS_BASE_COLORS = {
-  opted_out: "#10b981",       // Emerald 500(10b981)       IBM // 648fff         Colab // 9ee6b0
-  did_not_opt_out: "#3b82f6",  // Blue 500(3b82f6)         IBM // e75099         Colab // 90ddfe
-  not_applicable: "#94a3b8",   // Slate 400(94a3b8)        IBM // ffb000         Colab // dfc3d4
+  opted_out: "#9ee6b0",       // Emerald 500(10b981)       IBM // 648fff         Colab // 9ee6b0
+  did_not_opt_out: "#90ddfe",  // Blue 500(3b82f6)         IBM // e75099         Colab // 90ddfe
+  not_applicable: "#dfc3d4",   // Slate 400(94a3b8)        IBM // ffb000         Colab // dfc3d4
   invalid_missing: "#f59e0b",  // Amber 500
 };
 
@@ -632,7 +632,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       datalabels: {
         display: showDataLabels,
         color: "#000000",
-        font: { weight: "bold", size: 11.5 },
+        font: { weight: "bold", size: 14 },
         formatter: (val) => (val > 0 ? val.toLocaleString() : ""),
         anchor: "center",
         align: "center",
