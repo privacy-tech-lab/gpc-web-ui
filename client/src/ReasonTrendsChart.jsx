@@ -93,6 +93,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   gppSection,
   setCurrentPage,
   tableSelectedState,
+  expandedCategories,
+  setExpandedCategories,
 }) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
   const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
@@ -518,6 +520,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 }
               }}
               viewMode={viewMode}
+              expandedCategories={expandedCategories}
+              setExpandedCategories={setExpandedCategories}
             />
           </div>
 

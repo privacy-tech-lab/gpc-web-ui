@@ -29,7 +29,7 @@ function PieIcon() {
 function TableIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
-      <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm1 2v2h3V4H1zm4 0v2h3V4H5zm4 0v2h3V4H9zm4 0v2h2V4h-2zM1 7v2h3V7H1zm4 0v2h3V7H5zm4 0v2h3V7H9zm4 0v2h2V7h-2zm-12 3v2h3v-2H1zm4 0v2h3v-2H5zm4 0v2h3v-2H9zm4 0v2h2v-2h-2z" />
+      <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm1 2v2h3V4H1zm4 0v2h3V4H5zm4 0v2h3V4H9zm4 0v2h2V4h-2zM1 7v2h3V7H1zm4 0v2h3V7H5zm4 0v2h2V7h-2zm-12 3v2h3v-2H1zm4 0v2h3v-2H5zm4 0v2h3v-2H9zm4 0v2h2v-2h-2z" />
     </svg>
   );
 }
@@ -124,6 +124,15 @@ const STRUCTURED_COLUMNS = new Set([
   SCHEMA_CLASSIFICATION_COLUMN.toLowerCase(),
 ]);
 
+const isStateSensitiveSeries = (key) => {
+  if (typeof key !== "string") return false;
+  const lower = key.toLowerCase();
+  const stateSensitivePrefixes = ["gpp", "usps", "optanon", "well_known", "well-known"];
+  return stateSensitivePrefixes.some(
+    (prefix) => lower === prefix || lower.startsWith(`${prefix}|`) || lower.startsWith(`${prefix}_`)
+  );
+};
+
 function buildPath(periodEntry, type, state) {
   if (!periodEntry) return null;
   if (type === "pnc") {
@@ -211,7 +220,10 @@ function App() {
   );
   const [chartType, setChartType] = useState(() => getParam(["ctype"], "line"));
 
-  // Start background preloading all datasets on boot
+  // Track expanded state for category filter buttons explicitly
+  const [expandedFilterCategories, setExpandedFilterCategories] = useState({});
+
+  // Preload datasets on boot
   useEffect(() => {
     preloadAllDatasets();
   }, []);
@@ -237,6 +249,8 @@ function App() {
       case "table":
         setShowOverview(false);
         setViewMode("table");
+        setTableSelectedSeries((prev) => prev.filter((key) => !isStateSensitiveSeries(key)));
+        setExpandedFilterCategories({});
         setPendingScrollId("page-top");
         break;
       default:
@@ -369,6 +383,50 @@ function App() {
       setCurrentPage(1);
     }
   }, [selectedState, selectedTimePeriod]);
+
+  // Strip state-sensitive series and collapse their buttons when switching to table mode
+  useEffect(() => {
+    if (viewMode === "table") {
+      setTableSelectedSeries((prevSeries) =>
+        prevSeries.filter((key) => !isStateSensitiveSeries(key))
+      );
+      setExpandedFilterCategories((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((cat) => {
+          if (["gpp", "usps", "optanon", "well_known"].includes(cat.toLowerCase())) {
+            next[cat] = false;
+          }
+        });
+        return next;
+      });
+    }
+  }, [viewMode]);
+
+  // Clean state-specific series filters and collapse buttons on state change
+  useEffect(() => {
+    setTableSelectedSeries((prevSeries) =>
+      prevSeries.filter((key) => {
+        if (isStateSensitiveSeries(key)) {
+          const parts = key.split("|");
+          if (parts.length >= 2) {
+            const keyState = parts[1];
+            return keyState === selectedState || keyState === "US" || keyState === "usnat";
+          }
+          return false;
+        }
+        const parts = key.split("|");
+        if (parts.length >= 2) {
+          const keyState = parts[1];
+          if (AVAILABLE_STATES.includes(keyState) && keyState !== selectedState) {
+            return false;
+          }
+        }
+        return true;
+      })
+    );
+    // Collapse any category button whose active series were cleared
+    setExpandedFilterCategories({});
+  }, [selectedState]);
 
   // Load table dataset using shared dataset memory cache
   useEffect(() => {
@@ -741,20 +799,8 @@ function App() {
             id="state-select"
             value={selectedState}
             onChange={(e) => {
-              const nextState = e.target.value;
-              setSelectedState(nextState);
+              setSelectedState(e.target.value);
               setCurrentPage(1);
-              setSelectedStates((prev) =>
-                prev.includes(nextState) ? prev : [...prev, nextState],
-              );
-              const filterGpp = (prev) =>
-                prev.filter((k) => {
-                  if (!k.startsWith("gpp|")) return true;
-                  const gppState = k.split("|")[1];
-                  return gppState === "US" || gppState === "usnat";
-                });
-              setGraphSelectedSeries(filterGpp);
-              setTableSelectedSeries(filterGpp);
             }}
             style={{ margin: 0 }}
           >
@@ -791,6 +837,7 @@ function App() {
             type="button"
             aria-expanded={showColumnPicker}
             aria-controls="column-picker"
+            className={showColumnPicker ? "active" : ""}
             onClick={() => setShowColumnPicker((open) => !open)}
             disabled={schemaModeUnavailable || loading}
             style={{ margin: 0 }}
@@ -926,7 +973,6 @@ function App() {
       <SideNav activeSectionId={activeSectionId} onNavigate={goToSection} />
       <div className="app-container">
         <style>{`
-          /* 1. Global Reset to eliminate the outer margin/padding on the left */
           html, body, #root {
             margin: 0 !important;
             padding: 0 !important;
@@ -935,7 +981,6 @@ function App() {
             box-sizing: border-box !important;
           }
 
-          /* 2. Force full flex layout */
           .app-layout {
             display: flex !important;
             width: 100% !important;
@@ -945,7 +990,6 @@ function App() {
             overflow-x: hidden !important;
           }
 
-          /* 3. Fixed side navbar floating overlaying the page */
           .side-nav {
             position: fixed !important;
             top: 0 !important;
@@ -964,7 +1008,6 @@ function App() {
             box-shadow: 4px 0 15px rgba(0, 0, 0, 0.15) !important;
           }
 
-          /* 4. Main content container offset by the collapsed sidebar width */
           .app-container {
             flex: 1 1 auto !important;
             min-width: 0 !important;
@@ -1231,6 +1274,8 @@ function App() {
         activeChart={activeChart}
         setActiveChart={setActiveChart}
         setCurrentPage={setCurrentPage}
+        expandedCategories={expandedFilterCategories}
+        setExpandedCategories={setExpandedFilterCategories}
         gppSection={
           <LazyOnView
             fallback={
