@@ -717,7 +717,7 @@ function App() {
           </div>
         </div>
         <div id="table-scroll">
-          <table>
+          <table className={pageRows.length < 4 ? "table--sparse" : undefined}>
             <thead>
               <tr>
                 {visibleTableColumns.map((header) => (
@@ -1046,32 +1046,27 @@ function App() {
             line-height: 1.3em;
             max-height: 2.6em;
           }
-          #table-scroll td:hover {
-            overflow: visible;
-            z-index: 90;
-          }
-          #table-scroll td:hover .cell-content {
+          /* When a search/filter narrows the table down to a handful of
+             rows, there's no reason to clamp/hide content behind a hover —
+             let every cell expand to its full content by default. */
+          #table-scroll table.table--sparse td .cell-content {
             display: block;
-            position: absolute;
-            left: 0;
-            top: 0;
-            min-width: 100%;
-            width: max-content;
-            max-width: 520px;
-            white-space: normal;
-            background: #ffffff;
-            padding: 8px 12px;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
-            border: 1px solid #cbd5e1;
-            z-index: 120;
-            border-radius: 4px;
-            word-break: break-word;
-            color: #0f172a;
-            max-height: none;
             -webkit-line-clamp: unset;
+            overflow: visible;
+            max-height: none;
           }
-          #table-scroll td.col-sticky:hover .cell-content {
-            left: 0;
+          /* Hovering expands the cell in normal document flow (not a
+             floating overlay) — the row grows taller in place, which pushes
+             later rows and the bottom pager further down the page. Always
+             grows downward; there's no "flip upward" special case since
+             nothing needs to escape the page bounds anymore. */
+          #table-scroll table:not(.table--sparse) td:hover .cell-content {
+            display: block;
+            -webkit-line-clamp: unset;
+            overflow: visible;
+            max-height: none;
+            background: #f8fafc;
+            border-radius: 4px;
           }
           .hero-title-wrapper {
             display: flex;
