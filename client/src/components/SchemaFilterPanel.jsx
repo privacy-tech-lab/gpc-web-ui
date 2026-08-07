@@ -387,19 +387,23 @@ export default function SchemaFilterPanel({
     [selectedSchemaTokens]
   );
 
-  // Sync expanded families when tokens change
+  // Sync expanded families when tokens change:
+  // - open any family that has a newly-selected token
+  // - close any family whose tokens have all been deselected
   useEffect(() => {
     setExpandedFamilies((prev) => {
       const next = new Set(prev);
       let changed = false;
       const allFamilies = [...FAMILY_CONFIG.map(f => f.key), "gpp"];
       allFamilies.forEach((key) => {
-        if (!next.has(key)) {
-          const ft = familyTokens(tokens, key);
-          if (ft.some((t) => selectedSchemaTokens.includes(t))) {
-            next.add(key);
-            changed = true;
-          }
+        const ft = familyTokens(tokens, key);
+        const hasSelected = ft.some((t) => selectedSchemaTokens.includes(t));
+        if (!next.has(key) && hasSelected) {
+          next.add(key);
+          changed = true;
+        } else if (next.has(key) && !hasSelected) {
+          next.delete(key);
+          changed = true;
         }
       });
       return changed ? next : prev;
