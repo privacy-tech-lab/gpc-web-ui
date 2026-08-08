@@ -20,17 +20,18 @@
 The GPC Web UI is developed and maintained by the [OptMeowt team](https://github.com/privacy-tech-lab/gpc-optmeowt#optmeowt-).
 
 [1. Introduction](#1-introduction)  
-[2. Instructions for Running Locally](#2-instructions-for-running-locally)  
-[3. Adding New Data](#3-adding-new-data)  
-[4. Thank You!](#4-thank-you)
+[2. Deploying the Site Locally](#2-deploying-the-site-locally)  
+[3. Deploying the Site to Production](#3-deploying-the-site-to-production)  
+[4. Adding New Data](#4-adding-new-data)  
+[5. Thank You!](#5-thank-you)
 
 ## 1. Introduction
 
 Code for showing GPC crawl results in an interactive user interface on the web.
 
-Currently deployed on vercel at [gpc-web-ui.vercel.app](https://gpc-web-ui.vercel.app).
+Currently deployed on Vercel at [gpc-web-ui.vercel.app](https://gpc-web-ui.vercel.app).
 
-## 2. Instructions for Running Locally
+## 2. Deploying the Site Locally
 
 Run the following command to clone this repository locally:
 
@@ -38,7 +39,7 @@ Run the following command to clone this repository locally:
 git clone https://github.com/privacy-tech-lab/gpc-web-ui.git
 ```
 
-Navigate to the client directory
+Navigate to the client directory:
 
 ```console
 cd client
@@ -51,11 +52,15 @@ npm i
 npm run dev
 ```
 
-## 3. Adding New Data
+## 3. Deploying the Site to Production
+
+For lab members, to deploy updates of the site to production, simply push your changes to GitHub.
+
+## 4. Adding New Data
 
 Follow tutorial on the repository [wiki](https://github.com/privacy-tech-lab/gpc-web-ui/wiki/Instructions-for-Uploading-Data).
 
-## 4. Thank You!
+## 5. Thank You!
 
 <p align="center"><strong>We would like to thank our supporters!</strong></p><br>
 
