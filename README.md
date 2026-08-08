@@ -29,7 +29,7 @@ The GPC Web UI is developed and maintained by the [OptMeowt team](https://github
 
 Code for showing GPC crawl results in an interactive user interface on the web.
 
-Currently deployed on Vercel at [gpc-web-ui.vercel.app](https://gpc-web-ui.vercel.app).
+Currently deployed via GitHub and Vercel at [gpc-web-ui.vercel.app](https://gpc-web-ui.vercel.app).
 
 ## 2. Deploying the Site Locally
 
@@ -58,7 +58,7 @@ For lab members, to deploy updates of the site to production, simply push your c
 
 ## 4. Adding New Data
 
-Follow tutorial on the repository [wiki](https://github.com/privacy-tech-lab/gpc-web-ui/wiki/Instructions-for-Uploading-Data).
+For lab members, follow the tutorial on the repository [Wiki](https://github.com/privacy-tech-lab/gpc-web-ui/wiki/Instructions-for-Uploading-Data).
 
 ## 5. Thank You!
 
