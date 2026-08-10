@@ -90,7 +90,6 @@ export async function loadDataset(state, periodEntry) {
         Papa.parse(text, {
           header: true,
           skipEmptyLines: true,
-          worker: true,
           complete: (res) => resolve(res),
           error: (err) => reject(err),
         });
