@@ -115,6 +115,11 @@ function findPeriod(state, key) {
   );
 }
 
+function getColumnDisplayName(column, friendlyNames) {
+  if (column === SCHEMA_CLASSIFICATION_COLUMN) return "Compliance Classification";
+  return friendlyNames[column] || column;
+}
+
 const STRUCTURED_COLUMNS = new Set([
   "urlclassification",
   "third_party_urls",
@@ -536,69 +541,62 @@ function App() {
 
   const groupedColumns = useMemo(() => {
     const categories = [
-      { id: "website", name: "Website Metadata", columns: [] },
       { id: "compliance", name: "Compliance Status", columns: [] },
-      { id: "tracking", name: "Tracking & Networks", columns: [] },
+      { id: "usps", name: "USPS", columns: [] },
+      { id: "optanon", name: "Optanon Consent Cookie", columns: [] },
+      { id: "wellknown", name: "Well Known Endpoint", columns: [] },
       { id: "gpp", name: "Global Privacy Platform (GPP)", columns: [] },
-      { id: "signals", name: "Cookies & Other Signals", columns: [] },
-      { id: "other", name: "Other Columns", columns: [] },
+      { id: "other", name: "Others", columns: [] },
     ];
 
     displayHeaders.forEach((column) => {
-      if (isSiteUrlColumn(column)) {
-        return;
-      }
+      if (isSiteUrlColumn(column)) return;
 
       const rawLower = column.toLowerCase();
 
-      if (rawLower === "site id" || rawLower === "site_id") {
-        return;
-      }
+      if (rawLower === "site id" || rawLower === "site_id") return;
 
-      const friendlyLower = (headerFriendlyNames[column] || column).toLowerCase();
+      const friendlyLower = getColumnDisplayName(column, headerFriendlyNames).toLowerCase();
+      const schemaColLower = SCHEMA_CLASSIFICATION_COLUMN.toLowerCase();
 
-      if (rawLower === "site is null") {
-        categories[1].columns.push(column);
-      }
-      else if (
-        rawLower.includes("site") ||
-        rawLower.includes("domain") ||
-        rawLower.includes("url") && !rawLower.includes("classification") && !rawLower.includes("third_party")
+      // 1. Compliance Status: Compliance Result, Compliance Classification, Site is Null,
+      //    and any other compliant/compliance/reason columns
+      if (
+        column === "Compliance Result" ||
+        rawLower === schemaColLower ||
+        rawLower === "site is null" ||
+        rawLower.includes("compliant") ||
+        rawLower.includes("compliance") ||
+        rawLower.includes("reason")
       ) {
         categories[0].columns.push(column);
       }
+      // 2. USPS: usps implementation, us privacy string, usp cookies, usp api
       else if (
-        rawLower.includes("compliant") ||
-        rawLower.includes("compliance") ||
-        rawLower.includes("schema") ||
-        rawLower.includes("reason")
+        rawLower.includes("usps") ||
+        rawLower.includes("us_privacy") ||
+        rawLower.startsWith("usp_") ||
+        rawLower.includes("_usp_") ||
+        friendlyLower.includes("usps") ||
+        friendlyLower.includes("us privacy") ||
+        friendlyLower.includes("usp cookie") ||
+        friendlyLower.includes("usp api")
       ) {
         categories[1].columns.push(column);
       }
-      else if (
-        rawLower.includes("ad_network") ||
-        rawLower.includes("third_party") ||
-        rawLower.includes("classification") ||
-        friendlyLower.includes("tracking") ||
-        friendlyLower.includes("network") ||
-        friendlyLower.includes("third party")
-      ) {
+      // 3. Optanon Consent Cookie
+      else if (rawLower.includes("optanon") || rawLower.includes("onetrust")) {
         categories[2].columns.push(column);
       }
-      else if (rawLower.includes("gpp")) {
+      // 4. Well Known Endpoint
+      else if (rawLower.includes("well_known") || rawLower.includes("well-known")) {
         categories[3].columns.push(column);
       }
-      else if (
-        rawLower.includes("usps") ||
-        rawLower.includes("optanon") ||
-        rawLower.includes("well_known") ||
-        rawLower.includes("well-known") ||
-        friendlyLower.includes("us privacy") ||
-        friendlyLower.includes("cookie") ||
-        friendlyLower.includes("well-known")
-      ) {
+      // 5. GPP
+      else if (rawLower.includes("gpp")) {
         categories[4].columns.push(column);
       }
+      // 6. Others
       else {
         categories[5].columns.push(column);
       }
@@ -724,13 +722,13 @@ function App() {
                   <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
                     {descriptionsOfColumns[header] ? (
                       <div className="header-wrapper">
-                        <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                        <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
                         <Tooltip content={descriptionsOfColumns[header]} position="bottom">
                           <span className="tooltip-icon">?</span>
                         </Tooltip>
                       </div>
                     ) : (
-                      <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                      <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
                     )}
                   </th>
                 ))}
@@ -953,7 +951,7 @@ function App() {
                             setCurrentPage(1);
                           }}
                         />
-                        <span>{headerFriendlyNames[column] || column}</span>
+                        <span>{getColumnDisplayName(column, headerFriendlyNames)}</span>
                       </label>
                     );
                   })}

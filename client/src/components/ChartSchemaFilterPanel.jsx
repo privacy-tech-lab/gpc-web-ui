@@ -8,17 +8,29 @@ import SchemaFilterPanel from "./SchemaFilterPanel.jsx";
  *
  * "Chart Schema Filters" for ReasonTrendsChart. Shows:
  * - A "Quick Series" section for the special/overview cards
- * (Potentially Non-Compliant Sites, Null Sites, and Top-Level Compliance Results)
+ * (Null Sites and Top-Level Compliance Results)
  * - The full hierarchical SchemaFilterPanel for token-level chart series
  */
 
 const SPECIAL_KEYS = new Set([
-  "Potentially Non-Compliant Sites",
   "Likely Does Not Honor GPC",
   "Likely Honors GPC",
   "Not Applicable/Invalid/Missing",
   "Null Sites",
 ]);
+
+// Authoritative descriptions for the top-level compliance result cards,
+// derived from the Compliance Classifications methodology.
+const SPECIAL_DESCRIPTIONS = {
+  "Likely Does Not Honor GPC":
+    "At least one privacy string has 'Did Not Opt Out' (excluding the Well-known endpoint).",
+  "Likely Honors GPC":
+    "At least one privacy string has 'Opted Out' and none have 'Did Not Opt Out' (including the Well-known endpoint).",
+  "Not Applicable/Invalid/Missing":
+    "No privacy string shows a clear opt-out or refusal — strings are null, invalid, missing, or not applicable.",
+  "Null Sites":
+    "Sites the crawler could not reach or evaluate. Excluded from compliance analysis.",
+};
 
 function PowerToggle({ on, onClick, label }) {
   return (
@@ -40,6 +52,7 @@ export default function ChartSchemaFilterPanel({
   selectedStates,
   onToggle,
   viewMode,
+  loading = false,
 }) {
   const selectedSet = useMemo(
     () => new Set(selectedSeries),
@@ -107,7 +120,6 @@ export default function ChartSchemaFilterPanel({
               let icon = "📊";
               let label = opt.label;
               
-              if (opt.key === "Potentially Non-Compliant Sites") { icon = "⚠️"; label = "All Potentially Non-Compliant Sites"; }
               if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
               if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; }
@@ -122,7 +134,7 @@ export default function ChartSchemaFilterPanel({
                 >
                   <div className="sfp__family-header">
                     {/* Tooltip isolated safely inside the text item layout wrapper */}
-                    <Tooltip content={opt.description} position="top">
+                    <Tooltip content={SPECIAL_DESCRIPTIONS[opt.key] || opt.description} position="top">
                       <span className="sfp__family-label" style={{ whiteSpace: "nowrap" }}>
                         {icon} {label}
                       </span>
@@ -144,17 +156,15 @@ export default function ChartSchemaFilterPanel({
       )}
 
       {/* ── Hierarchical token filter ── */}
-      {schemaFilterMeta.tokens.length > 0 && (
-        <div className="csfp__schema-panel">
-          <SchemaFilterPanel
-            schemaFilterMeta={schemaFilterMeta}
-            selectedSchemaTokens={selectedSchemaTokens}
-            geoStates={selectedStates}
-            onChange={handleSchemaTokenChange}
-            viewMode={viewMode}
-          />
-        </div>
-      )}
+      <div className="csfp__schema-panel">
+        <SchemaFilterPanel
+          schemaFilterMeta={schemaFilterMeta}
+          selectedSchemaTokens={selectedSchemaTokens}
+          geoStates={selectedStates}
+          onChange={handleSchemaTokenChange}
+          viewMode={viewMode}
+        />
+      </div>
     </div>
   );
 }

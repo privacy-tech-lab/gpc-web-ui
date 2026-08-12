@@ -101,7 +101,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showDataLabels, setShowDataLabels] = useState(false);
+  const [showDataLabels, setShowDataLabels] = useState("off"); // "off" | "counts" | "percentages"
   const chartRef = useRef(null);
 
   useEffect(() => {
@@ -296,6 +296,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         color = shadeHex(baseColor, percent);
       }
 
+      const isComplianceOrNull =
+        seriesKey === SPECIAL_SERIES.PNC_SITES ||
+        seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR ||
+        seriesKey === COMPLIANCE_SERIES.HONORS ||
+        seriesKey === COMPLIANCE_SERIES.NA_INVALID ||
+        seriesKey === SPECIAL_SERIES.NULL_SITES;
+
+      const schemaFamily = !isComplianceOrNull ? parseSchemaToken(seriesKey)?.family : null;
+
       let data = unifiedMonthKeys.map(m => {
         if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
@@ -319,12 +328,24 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
         return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
       });
+
+      // Denominators for percentage labels:
+      // - compliance/null series → total sites for that state/month
+      // - schema token series (usps, optanon, wellKnown, gpp) → sites with any token from that family
+      const denominators = unifiedMonthKeys.map(m => {
+        const allRecs = stateMonthToAllRecords[stateCode]?.[m] || [];
+        if (isComplianceOrNull) return allRecs.length;
+        if (!schemaFamily) return allRecs.length;
+        return allRecs.filter(r => r.schema?.tokens?.some(t => t.startsWith(schemaFamily + "|"))).length;
+      });
+
       allDatasets.push({
         label: `${stateCode} - ${seriesOptions.find(o => o.key === seriesKey)?.label || seriesKey}`,
         data, borderColor: color, backgroundColor: chartType === "line" ? color : `${color}80`,
         fill: false, tension: 0.3, pointRadius: 4, pointHoverRadius: 6,
         borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
         spanGaps: true,
+        _denominators: denominators,
       });
     }));
     return allDatasets;
@@ -335,12 +356,21 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     layout: { padding: { top: 10, bottom: 10, left: 10, right: 20 } },
     plugins: {
       datalabels: {
-        display: showDataLabels,
+        display: showDataLabels !== "off",
         backgroundColor: "rgba(255, 255, 255, 0.9)",
         borderRadius: 4,
         color: (ctx) => ctx.dataset.borderColor,
         font: { weight: "bold", size: 10 },
-        formatter: (val) => (val > 0 ? val.toLocaleString() : ""),
+        formatter: (val, ctx) => {
+          if (!val || val <= 0) return "";
+          if (showDataLabels === "counts") return val.toLocaleString();
+          if (showDataLabels === "percentages") {
+            const denom = ctx.dataset._denominators?.[ctx.dataIndex];
+            if (!denom) return "";
+            return ((val / denom) * 100).toFixed(1) + "%";
+          }
+          return "";
+        },
         padding: 4,
         offset: 8,
         anchor: "end",
@@ -394,7 +424,25 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         },
         labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: "circle", padding: 12, font: { size: 11, family: "'Segoe UI', sans-serif", weight: "500" }, color: "#475569" },
       },
-      tooltip: { mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12, titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true },
+      tooltip: {
+        mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12,
+        titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true,
+        callbacks: {
+          label: (ctx) => {
+            const val = ctx.parsed.y;
+            const label = ctx.dataset.label ?? "";
+            if (val == null) return `${label}: —`;
+            if (showDataLabels === "percentages") {
+              const denom = ctx.dataset._denominators?.[ctx.dataIndex];
+              if (denom) {
+                const pct = ((val / denom) * 100).toFixed(1);
+                return `${label}: ${pct}% (${val.toLocaleString()} out of ${denom.toLocaleString()})`;
+              }
+            }
+            return `${label}: ${val.toLocaleString()}`;
+          },
+        },
+      },
       title: { display: true, text: "Schema classification trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
     },
     scales: {
@@ -475,16 +523,34 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                         />
                       )}
                     </div>
-                    <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={showDataLabels}
-                          onChange={(e) => setShowDataLabels(e.target.checked)}
-                        />
-                        Show data labels
-                      </label>
-                      <button className="btn-download" onClick={handleDownload}>Download PNG</button>
+                    <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "14px", fontWeight: "500", color: "#475569" }}>Labels:</span>
+                          <div className="chip-group">
+                            {[
+                              { value: "off", label: "Off" },
+                              { value: "counts", label: "Counts" },
+                              { value: "percentages", label: "Percentages" },
+                            ].map(({ value, label }) => (
+                              <button
+                                key={value}
+                                className={`chip${showDataLabels === value ? " chip--active" : ""}`}
+                                style={{ padding: "4px 12px", fontSize: "12px" }}
+                                onClick={() => setShowDataLabels(value)}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <button className="btn-download" onClick={handleDownload}>Download PNG</button>
+                      </div>
+                      {showDataLabels === "percentages" && graphSelectedSeries.some(k => parseSchemaToken(k)) && (
+                        <p style={{ margin: 0, fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
+                          * Percentages for USPS, OptanonConsent, Well-Known, and GPP series are out of sites with a non-None value for that variable, not total sites.
+                        </p>
+                      )}
                     </div>
                   </>
                 )}
