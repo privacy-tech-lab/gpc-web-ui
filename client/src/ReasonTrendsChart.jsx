@@ -130,8 +130,10 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     if (!chart) return;
 
     chart.stop();
-    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
-    chart.setActiveElements([]);
+    if (showDataLabels !== "percentages") {
+      chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+      chart.setActiveElements([]);
+    }
 
     const originalDatasets = chart.data.datasets;
     chart.data.datasets = originalDatasets.filter(ds => !ds.hidden);
@@ -443,7 +445,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           },
         },
       },
-      title: { display: true, text: "Schema classification trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
+      title: { display: false, text: "Schema classification trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
     },
     scales: {
       y: { beginAtZero: true, grid: { color: "rgba(0, 0, 0, 0.05)", drawBorder: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Number of Sites", font: { size: 12, weight: "600" }, color: "#475569" } },
