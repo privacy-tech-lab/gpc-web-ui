@@ -9,7 +9,6 @@ const BeforeAfterBreakdown = lazy(
   () => import("./components/BeforeAfterBreakdown.jsx"),
 );
 
-// SVG Icons matching those in SideNav.jsx - Enlarged to 56x56
 function ChartIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
@@ -212,11 +211,9 @@ function App() {
   const pickerBtnRef = useRef(null);
   const pickerPanelRef = useRef(null);
 
-  // Graph default: "Likely Does Not Honor GPC"
   const [graphSelectedSeries, setGraphSelectedSeries] = useState(() =>
     getArrayParam(["cseries"], ["Likely Does Not Honor GPC"]),
   );
-  // Table default: Nothing ([])
   const [tableSelectedSeries, setTableSelectedSeries] = useState(() =>
     getArrayParam(["tseries"], []),
   );
@@ -224,11 +221,8 @@ function App() {
     getArrayParam(["cstates"], ["CA"]),
   );
   const [chartType, setChartType] = useState(() => getParam(["ctype"], "line"));
-
-  // Track expanded state for category filter buttons explicitly
   const [expandedFilterCategories, setExpandedFilterCategories] = useState({});
 
-  // Preload datasets on boot
   useEffect(() => {
     preloadAllDatasets();
   }, []);
@@ -389,7 +383,6 @@ function App() {
     }
   }, [selectedState, selectedTimePeriod]);
 
-  // Strip state-sensitive series and collapse their buttons when switching to table mode
   useEffect(() => {
     if (viewMode === "table") {
       setTableSelectedSeries((prevSeries) =>
@@ -407,7 +400,6 @@ function App() {
     }
   }, [viewMode]);
 
-  // Clean state-specific series filters and collapse buttons on state change
   useEffect(() => {
     setTableSelectedSeries((prevSeries) =>
       prevSeries.filter((key) => {
@@ -429,11 +421,9 @@ function App() {
         return true;
       })
     );
-    // Collapse any category button whose active series were cleared
     setExpandedFilterCategories({});
   }, [selectedState]);
 
-  // Load table dataset using shared dataset memory cache
   useEffect(() => {
     let cancelled = false;
 
@@ -559,8 +549,6 @@ function App() {
       const friendlyLower = getColumnDisplayName(column, headerFriendlyNames).toLowerCase();
       const schemaColLower = SCHEMA_CLASSIFICATION_COLUMN.toLowerCase();
 
-      // 1. Compliance Status: Compliance Result, Compliance Classification, Site is Null,
-      //    and any other compliant/compliance/reason columns
       if (
         column === "Compliance Result" ||
         rawLower === schemaColLower ||
@@ -570,9 +558,7 @@ function App() {
         rawLower.includes("reason")
       ) {
         categories[0].columns.push(column);
-      }
-      // 2. USPS: usps implementation, us privacy string, usp cookies, usp api
-      else if (
+      } else if (
         rawLower.includes("usps") ||
         rawLower.includes("us_privacy") ||
         rawLower.startsWith("usp_") ||
@@ -583,21 +569,13 @@ function App() {
         friendlyLower.includes("usp api")
       ) {
         categories[1].columns.push(column);
-      }
-      // 3. Optanon Consent Cookie
-      else if (rawLower.includes("optanon") || rawLower.includes("onetrust")) {
+      } else if (rawLower.includes("optanon") || rawLower.includes("onetrust")) {
         categories[2].columns.push(column);
-      }
-      // 4. Well Known Endpoint
-      else if (rawLower.includes("well_known") || rawLower.includes("well-known")) {
+      } else if (rawLower.includes("well_known") || rawLower.includes("well-known")) {
         categories[3].columns.push(column);
-      }
-      // 5. GPP
-      else if (rawLower.includes("gpp")) {
+      } else if (rawLower.includes("gpp")) {
         categories[4].columns.push(column);
-      }
-      // 6. Others
-      else {
+      } else {
         categories[5].columns.push(column);
       }
     });
@@ -1251,6 +1229,17 @@ function App() {
                 </div>
               </button>
             </div>
+
+            <footer style={{ marginTop: "60px", paddingTop: "16px", borderTop: "1px solid #e2e8f0", textAlign: "center", fontSize: "12px", color: "#64748b" }}>
+              <a
+                href="/privacy-policy.html"
+                target="_blank"
+                rel="noreferrer noopener"
+                style={{ color: "#64748b", textDecoration: "underline" }}
+              >
+                Privacy Policy
+              </a>
+            </footer>
           </div>
         )}
 
