@@ -69,6 +69,26 @@ const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   SPECIAL_SERIES.NULL_SITES,
 ]);
 
+// Each entry: prefixes a series key may start with -> display label for the footnote.
+// Uses the same prefix logic as isStateSensitiveSeries in App.jsx so all four families
+// are detected reliably, regardless of what parseSchemaToken returns internally.
+const SCHEMA_FAMILY_MATCHERS = [
+  { prefixes: ["usps"],                                       label: "USPS" },
+  { prefixes: ["optanonconsent", "optanon"],                  label: "OptanonConsent" },
+  { prefixes: ["wellknown", "well_known", "well-known"],      label: "Well-Known" },
+  { prefixes: ["gpp"],                                        label: "GPP" },
+];
+
+function getSchemaFamilyLabel(seriesKey) {
+  const lower = String(seriesKey).toLowerCase();
+  for (const { prefixes, label } of SCHEMA_FAMILY_MATCHERS) {
+    if (prefixes.some(p => lower === p || lower.startsWith(`${p}|`) || lower.startsWith(`${p}_`))) {
+      return label;
+    }
+  }
+  return null;
+}
+
 function normalizeRow(row) {
   const normalized = {};
   Object.keys(row || {}).forEach(key => { normalized[String(key).trim()] = row[key]; });
@@ -104,6 +124,28 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   const [showDataLabels, setShowDataLabels] = useState("off"); // "off" | "counts" | "percentages"
   const chartRef = useRef(null);
 
+  // Which schema families (USPS / OptanonConsent / Well-Known / GPP) are currently selected.
+  // Keyed by display label so variants (well_known / well-known) never double-count.
+  const activeSchemaFamilies = useMemo(() => {
+    const seen = new Set();
+    graphSelectedSeries.forEach(k => {
+      const label = getSchemaFamilyLabel(k);
+      if (label) seen.add(label);
+    });
+    // Return in the canonical order defined by SCHEMA_FAMILY_MATCHERS
+    return SCHEMA_FAMILY_MATCHERS.map(m => m.label).filter(l => seen.has(l));
+  }, [graphSelectedSeries]);
+
+  // Footnote sentence built from only the active families
+  const footnoteText = useMemo(() => {
+    if (activeSchemaFamilies.length === 0) return null;
+    const list =
+      activeSchemaFamilies.length === 1
+        ? activeSchemaFamilies[0]
+        : activeSchemaFamilies.slice(0, -1).join(", ") + " and " + activeSchemaFamilies.at(-1);
+    return `* Percentages for ${list} series are out of sites with a non-None value for that variable, not total sites.`;
+  }, [activeSchemaFamilies]);
+
   useEffect(() => {
     if (chartRef.current) {
       chartRef.current._isolatedIndices = null;
@@ -130,27 +172,93 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     if (!chart) return;
 
     chart.stop();
-    if (showDataLabels !== "percentages") {
-      chart.tooltip.setActiveElements([], { x: 0, y: 0 });
-      chart.setActiveElements([]);
-    }
 
+    // Clear any hover tooltip and filter out hidden datasets
+    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+    chart.setActiveElements([]);
     const originalDatasets = chart.data.datasets;
     chart.data.datasets = originalDatasets.filter(ds => !ds.hidden);
     chart.update("none");
 
+    // Draw title + chart (+ optional footnote) onto a new canvas
     const canvas = chart.canvas;
+    const scale = window.devicePixelRatio || 1;
+    const totalTopPad = Math.round(40 * scale); // space for title
+
+    const showFootnote = showDataLabels === "percentages" && Boolean(footnoteText);
+    const footnoteFontSize = Math.round(11 * scale);
+    const footnoteLineHeight = Math.round(16 * scale);
+    const footnotePadX = Math.round(16 * scale);
+    const footnotePadY = Math.round(10 * scale);
+
+    // Measure how many lines the footnote needs (simple word-wrap)
+    function wrapText(ctx2, text, maxWidth) {
+      const words = text.split(" ");
+      const lines = [];
+      let line = "";
+      for (const word of words) {
+        const test = line ? line + " " + word : word;
+        if (ctx2.measureText(test).width > maxWidth && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+      return lines;
+    }
+
+    // Temporary canvas just for measuring footnote wrap
+    const measureCanvas = document.createElement("canvas");
+    const measureCtx = measureCanvas.getContext("2d");
+    measureCtx.font = `italic ${footnoteFontSize}px 'Segoe UI', system-ui, sans-serif`;
+    const footnoteLines = showFootnote
+      ? wrapText(measureCtx, footnoteText, canvas.width - footnotePadX * 2)
+      : [];
+    const totalBottomPad = showFootnote
+      ? footnotePadY + footnoteLines.length * footnoteLineHeight + footnotePadY
+      : 0;
+
     const newCanvas = document.createElement("canvas");
-    newCanvas.width = canvas.width; newCanvas.height = canvas.height;
+    newCanvas.width = canvas.width;
+    newCanvas.height = canvas.height + totalTopPad + totalBottomPad;
     const ctx = newCanvas.getContext("2d");
-    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
-    ctx.drawImage(canvas, 0, 0);
+
+    // White background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+
+    // Title
+    const titleFontSize = Math.round(15 * scale);
+    ctx.fillStyle = "#1e293b";
+    ctx.font = `700 ${titleFontSize}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Track Compliance Evolution Over Time", newCanvas.width / 2, totalTopPad / 2);
+
+    // Chart image below the title (datalabels already rendered on canvas as-is)
+    ctx.drawImage(canvas, 0, totalTopPad);
+
+    // Footnote below chart
+    if (showFootnote) {
+      ctx.font = `italic ${footnoteFontSize}px 'Segoe UI', system-ui, sans-serif`;
+      ctx.fillStyle = "#94a3b8";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      const footnoteTop = totalTopPad + canvas.height + footnotePadY;
+      footnoteLines.forEach((line, i) => {
+        ctx.fillText(line, footnotePadX, footnoteTop + i * footnoteLineHeight);
+      });
+    }
 
     const url = newCanvas.toDataURL("image/png", 1);
-    const a = document.createElement("a"); a.href = url;
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `Trend_${selectedStates.join("_")}.png`;
     a.click();
 
+    // Restore datasets
     chart.data.datasets = originalDatasets;
     chart.update("none");
   }
@@ -333,12 +441,13 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
 
       // Denominators for percentage labels:
       // - compliance/null series → total sites for that state/month
-      // - schema token series (usps, optanon, wellKnown, gpp) → sites with any token from that family
+      // - schema token series (usps, optanonConsent, wellKnown, gpp) → sites with any token from that family
       const denominators = unifiedMonthKeys.map(m => {
         const allRecs = stateMonthToAllRecords[stateCode]?.[m] || [];
         if (isComplianceOrNull) return allRecs.length;
         if (!schemaFamily) return allRecs.length;
-        return allRecs.filter(r => r.schema?.tokens?.some(t => t.startsWith(schemaFamily + "|"))).length;
+        const targetPrefix = schemaFamily.toLowerCase() + "|";
+        return allRecs.filter(r => r.schema?.tokens?.some(t => t.toLowerCase().startsWith(targetPrefix))).length;
       });
 
       allDatasets.push({
@@ -359,9 +468,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     plugins: {
       datalabels: {
         display: showDataLabels !== "off",
-        backgroundColor: "rgba(255, 255, 255, 0.9)",
+        backgroundColor: "rgba(255, 255, 255, 0.95)",
         borderRadius: 4,
-        color: (ctx) => ctx.dataset.borderColor,
+        color: (ctx) => {
+          const border = ctx.dataset.borderColor;
+          if (typeof border === "string" && border.startsWith("#")) {
+            return shadeHex(border.slice(0, 7), -0.45);
+          }
+          return "#0f172a";
+        },
         font: { weight: "bold", size: 10 },
         formatter: (val, ctx) => {
           if (!val || val <= 0) return "";
@@ -534,23 +649,33 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                               { value: "off", label: "Off" },
                               { value: "counts", label: "Counts" },
                               { value: "percentages", label: "Percentages" },
-                            ].map(({ value, label }) => (
-                              <button
-                                key={value}
-                                className={`chip${showDataLabels === value ? " chip--active" : ""}`}
-                                style={{ padding: "4px 12px", fontSize: "12px" }}
-                                onClick={() => setShowDataLabels(value)}
-                              >
-                                {label}
-                              </button>
-                            ))}
+                            ].map(({ value, label }) => {
+                              const isActive = showDataLabels === value;
+                              return (
+                                <button
+                                  key={value}
+                                  className={`chip${isActive ? " chip--active" : ""}`}
+                                  style={{
+                                    padding: "4px 12px",
+                                    fontSize: "12px",
+                                    backgroundColor: isActive ? "#0f172a" : undefined,
+                                    color: isActive ? "#ffffff" : undefined,
+                                    borderColor: isActive ? "#0f172a" : undefined,
+                                    fontWeight: isActive ? "600" : "400",
+                                  }}
+                                  onClick={() => setShowDataLabels(value)}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                         <button className="btn-download" onClick={handleDownload}>Download PNG</button>
                       </div>
-                      {showDataLabels === "percentages" && graphSelectedSeries.some(k => parseSchemaToken(k)) && (
+                      {showDataLabels === "percentages" && footnoteText && (
                         <p style={{ margin: 0, fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
-                          * Percentages for USPS, OptanonConsent, Well-Known, and GPP series are out of sites with a non-None value for that variable, not total sites.
+                          {footnoteText}
                         </p>
                       )}
                     </div>
