@@ -92,6 +92,35 @@ function usnatTableFieldNote(field, tableState) {
   return null;
 }
 
+// Hover descriptions for each privacy string family card
+const FAMILY_DESCRIPTIONS = {
+  usps: "The US Privacy String (USPS) is a legacy consent signal used by sites to communicate a user's privacy choices.",
+  optanonConsent: "The OptanonConsent cookie is OneTrust's mechanism for storing and communicating a user's consent preferences across a site.",
+  wellKnown: "The well-known endpoint is a file sites publish to declare their GPC policy — whether they intend to honor opt-out signals.",
+  gpp: "The Global Privacy Platform (GPP) string is a standardized consent signal covering multiple US state privacy laws, with separate sections per state.",
+};
+
+// Hover descriptions for each status pill, per privacy string family
+const STATUS_DESCRIPTIONS = {
+  usps: {
+    opted_out: "The site opted the user out of sale after receiving the GPC signal.",
+    did_not_opt_out: "The site did not opt the user out of sale after receiving the GPC signal.",
+    invalid_missing: "USPS string was invalid or missing after the GPC signal.",
+    not_applicable: "USPS declares this privacy regulation is not applicable to this site.",
+  },
+  optanonConsent: {
+    opted_out: "OptanonConsent cookie was updated to reflect opt-out after the GPC signal.",
+    did_not_opt_out: "OptanonConsent cookie was not updated after the GPC signal.",
+    invalid_missing: "OptanonConsent cookie was invalid or missing after the GPC signal.",
+  },
+  wellKnown: {
+    opted_out: "The well-known endpoint signals this site honors GPC.",
+    did_not_opt_out: "The well-known endpoint signals the site does not honor GPC — this likely means GPC is not applicable to the site rather than non-compliance.",
+    invalid_missing: "The well-known endpoint was missing or invalid after the GPC signal.",
+    not_applicable: "The well-known endpoint declares GPC is not applicable to this site.",
+  },
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function familyTokens(allTokens, family) {
@@ -143,7 +172,7 @@ function PowerToggle({ on, onClick, label }) {
   );
 }
 
-function StatusPills({ subset, selectedSet, onToggle, size }) {
+function StatusPills({ subset, selectedSet, onToggle, size, descriptions = {} }) {
   const visible = STATUS_CONFIG.filter((s) => statusTokens(subset, s.key).length > 0);
   return (
     <div className="sfp__statuses">
@@ -157,9 +186,9 @@ function StatusPills({ subset, selectedSet, onToggle, size }) {
         const color = (STATUS_COLOR_PALETTES[sk] && STATUS_COLOR_PALETTES[sk][0]) || "#666";
         const activeBg = allOn ? `${color}22` : undefined;
         const textColor = allOn ? "#07122b" : color;
-        return (
+        const desc = descriptions[sk];
+        const btn = (
           <button
-            key={sk}
             className={[
               "sfp__status-pill",
               cls,
@@ -179,6 +208,11 @@ function StatusPills({ subset, selectedSet, onToggle, size }) {
             {sl}
             {anyOn && !allOn ? " ◑" : ""}
           </button>
+        );
+        return desc ? (
+          <Tooltip key={sk} content={desc} position="top">{btn}</Tooltip>
+        ) : (
+          <span key={sk}>{btn}</span>
         );
       })}
     </div>
@@ -266,7 +300,9 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
     <div className={`sfp__family-card sfp__family-card--gpp ${isOn ? "sfp__family-card--on" : ""}`}>
       {/* Clean header layout matching standard card structures */}
       <div className="sfp__family-header">
-        <span className="sfp__family-label">📋 GPP</span>
+        <Tooltip content={FAMILY_DESCRIPTIONS.gpp} position="top">
+          <span className="sfp__family-label">📋 GPP</span>
+        </Tooltip>
         <PowerToggle on={isOn} onClick={() => onToggleFamily("gpp")} label="GPP" />
       </div>
 
@@ -489,13 +525,10 @@ export default function SchemaFilterPanel({
     else add(subset);
   }
 
-  if (tokens.length === 0) return null;
-
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px", alignItems: "start" }}>
       {FAMILY_CONFIG.map(({ key, label, icon }) => {
         const ft = familyTokens(tokens, key);
-        if (ft.length === 0) return null;
         const isOn = expandedFamilies.has(key);
         return (
           <div
@@ -504,9 +537,11 @@ export default function SchemaFilterPanel({
             style={{ margin: 0 }}
           >
             <div className="sfp__family-header">
-              <span className="sfp__family-label">
-                {icon} {label}
-              </span>
+              <Tooltip content={FAMILY_DESCRIPTIONS[key]} position="top">
+                <span className="sfp__family-label">
+                  {icon} {label}
+                </span>
+              </Tooltip>
               <PowerToggle
                 on={isOn}
                 onClick={() => toggleFamily(key)}
@@ -518,26 +553,25 @@ export default function SchemaFilterPanel({
                 subset={ft}
                 selectedSet={selectedSet}
                 onToggle={toggleStatusPills}
+                descriptions={STATUS_DESCRIPTIONS[key] || {}}
               />
             )}
           </div>
         );
       })}
 
-      {familyTokens(tokens, "gpp").length > 0 && (
-        <GppCard
-          tokens={familyTokens(tokens, "gpp")}
-          selectedSet={selectedSet}
-          onToggleFamily={toggleFamily}
-          onAdd={add}
-          onRemove={remove}
-          onReplace={replaceStatus}
-          labels={labels}
-          isOn={expandedFamilies.has("gpp")}
-          geoStates={geoStates}
-          viewMode={viewMode}
-        />
-      )}
+      <GppCard
+        tokens={familyTokens(tokens, "gpp")}
+        selectedSet={selectedSet}
+        onToggleFamily={toggleFamily}
+        onAdd={add}
+        onRemove={remove}
+        onReplace={replaceStatus}
+        labels={labels}
+        isOn={expandedFamilies.has("gpp")}
+        geoStates={geoStates}
+        viewMode={viewMode}
+      />
     </div>
   );
 }

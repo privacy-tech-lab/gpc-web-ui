@@ -9,7 +9,6 @@ const BeforeAfterBreakdown = lazy(
   () => import("./components/BeforeAfterBreakdown.jsx"),
 );
 
-// SVG Icons matching those in SideNav.jsx - Enlarged to 56x56
 function ChartIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
@@ -115,6 +114,11 @@ function findPeriod(state, key) {
   );
 }
 
+function getColumnDisplayName(column, friendlyNames) {
+  if (column === SCHEMA_CLASSIFICATION_COLUMN) return "Compliance Classification";
+  return friendlyNames[column] || column;
+}
+
 const STRUCTURED_COLUMNS = new Set([
   "urlclassification",
   "third_party_urls",
@@ -207,11 +211,9 @@ function App() {
   const pickerBtnRef = useRef(null);
   const pickerPanelRef = useRef(null);
 
-  // Graph default: "Likely Does Not Honor GPC"
   const [graphSelectedSeries, setGraphSelectedSeries] = useState(() =>
     getArrayParam(["cseries"], ["Likely Does Not Honor GPC"]),
   );
-  // Table default: Nothing ([])
   const [tableSelectedSeries, setTableSelectedSeries] = useState(() =>
     getArrayParam(["tseries"], []),
   );
@@ -219,11 +221,8 @@ function App() {
     getArrayParam(["cstates"], ["CA"]),
   );
   const [chartType, setChartType] = useState(() => getParam(["ctype"], "line"));
-
-  // Track expanded state for category filter buttons explicitly
   const [expandedFilterCategories, setExpandedFilterCategories] = useState({});
 
-  // Preload datasets on boot
   useEffect(() => {
     preloadAllDatasets();
   }, []);
@@ -384,7 +383,6 @@ function App() {
     }
   }, [selectedState, selectedTimePeriod]);
 
-  // Strip state-sensitive series and collapse their buttons when switching to table mode
   useEffect(() => {
     if (viewMode === "table") {
       setTableSelectedSeries((prevSeries) =>
@@ -402,7 +400,6 @@ function App() {
     }
   }, [viewMode]);
 
-  // Clean state-specific series filters and collapse buttons on state change
   useEffect(() => {
     setTableSelectedSeries((prevSeries) =>
       prevSeries.filter((key) => {
@@ -424,11 +421,9 @@ function App() {
         return true;
       })
     );
-    // Collapse any category button whose active series were cleared
     setExpandedFilterCategories({});
   }, [selectedState]);
 
-  // Load table dataset using shared dataset memory cache
   useEffect(() => {
     let cancelled = false;
 
@@ -536,70 +531,51 @@ function App() {
 
   const groupedColumns = useMemo(() => {
     const categories = [
-      { id: "website", name: "Website Metadata", columns: [] },
       { id: "compliance", name: "Compliance Status", columns: [] },
-      { id: "tracking", name: "Tracking & Networks", columns: [] },
+      { id: "usps", name: "USPS", columns: [] },
+      { id: "optanon", name: "Optanon Consent Cookie", columns: [] },
+      { id: "wellknown", name: "Well Known Endpoint", columns: [] },
       { id: "gpp", name: "Global Privacy Platform (GPP)", columns: [] },
-      { id: "signals", name: "Cookies & Other Signals", columns: [] },
-      { id: "other", name: "Other Columns", columns: [] },
+      { id: "other", name: "Others", columns: [] },
     ];
 
     displayHeaders.forEach((column) => {
-      if (isSiteUrlColumn(column)) {
-        return;
-      }
+      if (isSiteUrlColumn(column)) return;
 
       const rawLower = column.toLowerCase();
 
-      if (rawLower === "site id" || rawLower === "site_id") {
-        return;
-      }
+      if (rawLower === "site id" || rawLower === "site_id") return;
 
-      const friendlyLower = (headerFriendlyNames[column] || column).toLowerCase();
+      const friendlyLower = getColumnDisplayName(column, headerFriendlyNames).toLowerCase();
+      const schemaColLower = SCHEMA_CLASSIFICATION_COLUMN.toLowerCase();
 
-      if (rawLower === "site is null") {
-        categories[1].columns.push(column);
-      }
-      else if (
-        rawLower.includes("site") ||
-        rawLower.includes("domain") ||
-        rawLower.includes("url") && !rawLower.includes("classification") && !rawLower.includes("third_party")
-      ) {
-        categories[0].columns.push(column);
-      }
-      else if (
+      if (
+        column === "Compliance Result" ||
+        rawLower === schemaColLower ||
+        rawLower === "site is null" ||
         rawLower.includes("compliant") ||
         rawLower.includes("compliance") ||
-        rawLower.includes("schema") ||
         rawLower.includes("reason")
       ) {
-        categories[1].columns.push(column);
-      }
-      else if (
-        rawLower.includes("ad_network") ||
-        rawLower.includes("third_party") ||
-        rawLower.includes("classification") ||
-        friendlyLower.includes("tracking") ||
-        friendlyLower.includes("network") ||
-        friendlyLower.includes("third party")
-      ) {
-        categories[2].columns.push(column);
-      }
-      else if (rawLower.includes("gpp")) {
-        categories[3].columns.push(column);
-      }
-      else if (
+        categories[0].columns.push(column);
+      } else if (
         rawLower.includes("usps") ||
-        rawLower.includes("optanon") ||
-        rawLower.includes("well_known") ||
-        rawLower.includes("well-known") ||
+        rawLower.includes("us_privacy") ||
+        rawLower.startsWith("usp_") ||
+        rawLower.includes("_usp_") ||
+        friendlyLower.includes("usps") ||
         friendlyLower.includes("us privacy") ||
-        friendlyLower.includes("cookie") ||
-        friendlyLower.includes("well-known")
+        friendlyLower.includes("usp cookie") ||
+        friendlyLower.includes("usp api")
       ) {
+        categories[1].columns.push(column);
+      } else if (rawLower.includes("optanon") || rawLower.includes("onetrust")) {
+        categories[2].columns.push(column);
+      } else if (rawLower.includes("well_known") || rawLower.includes("well-known")) {
+        categories[3].columns.push(column);
+      } else if (rawLower.includes("gpp")) {
         categories[4].columns.push(column);
-      }
-      else {
+      } else {
         categories[5].columns.push(column);
       }
     });
@@ -724,13 +700,13 @@ function App() {
                   <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
                     {descriptionsOfColumns[header] ? (
                       <div className="header-wrapper">
-                        <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                        <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
                         <Tooltip content={descriptionsOfColumns[header]} position="bottom">
                           <span className="tooltip-icon">?</span>
                         </Tooltip>
                       </div>
                     ) : (
-                      <span className="header-content">{headerFriendlyNames[header] || header}</span>
+                      <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
                     )}
                   </th>
                 ))}
@@ -953,7 +929,7 @@ function App() {
                             setCurrentPage(1);
                           }}
                         />
-                        <span>{headerFriendlyNames[column] || column}</span>
+                        <span>{getColumnDisplayName(column, headerFriendlyNames)}</span>
                       </label>
                     );
                   })}
@@ -1248,6 +1224,17 @@ function App() {
                 </div>
               </button>
             </div>
+
+            <footer style={{ marginTop: "60px", paddingTop: "16px", borderTop: "1px solid #e2e8f0", textAlign: "center", fontSize: "12px", color: "#64748b" }}>
+              <a
+                href="/privacy-policy.html"
+                target="_blank"
+                rel="noreferrer noopener"
+                style={{ color: "#64748b", textDecoration: "underline" }}
+              >
+                Privacy Policy
+              </a>
+            </footer>
           </div>
         )}
 
