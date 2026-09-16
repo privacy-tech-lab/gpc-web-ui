@@ -17,7 +17,6 @@ import Tooltip from "./components/Tooltip";
 import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
-  isSchemaRowNonCompliant,
   sortSchemaTokens,
   parseSchemaToken,
 } from "./utils/schemaClassification.js";
@@ -50,8 +49,6 @@ const COMPLIANCE_DESCRIPTIONS = {
 };
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
-  [SPECIAL_SERIES.PNC_SITES]:
-    "Counts sites where at least one opt-out signal (USPS, OptanonConsent, or GPP) did not opt the user out after GPC. Well-known is excluded (it reflects GPC support, not opt-out behavior). Sites with no opt-out signal (could not determine) and sites that opted out (compliant) are excluded.",
   [SPECIAL_SERIES.NULL_SITES]:
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
@@ -344,6 +341,31 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
   }, [schemaSeriesMeta]);
 
+  const validSeriesKeys = useMemo(() => {
+    return new Set(seriesOptions.map(o => o.key));
+  }, [seriesOptions]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const validGraph = graphSelectedSeries.filter(k => validSeriesKeys.has(k));
+    if (validGraph.length !== graphSelectedSeries.length) {
+      setGraphSelectedSeries(validGraph);
+    }
+
+    const validTable = tableSelectedSeries.filter(k => validSeriesKeys.has(k));
+    if (validTable.length !== tableSelectedSeries.length) {
+      setTableSelectedSeries(validTable);
+    }
+  }, [loading, validSeriesKeys, graphSelectedSeries, tableSelectedSeries, setGraphSelectedSeries, setTableSelectedSeries]);
+
+  useEffect(() => {
+    const validStates = selectedStates.filter(s => AVAILABLE_STATES.includes(s));
+    if (validStates.length !== selectedStates.length) {
+      setSelectedStates(validStates.length > 0 ? validStates : ["CA"]);
+    }
+  }, [selectedStates, setSelectedStates]);
+
   function shadeHex(hex, percent) {
     if (!hex || hex[0] !== "#") return hex;
     const h = hex.replace("#", "");
@@ -362,11 +384,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     const allDatasets = []; const statusVarCounters = {};
     const colorUsageCounts = {};
     selectedStates.forEach(s => graphSelectedSeries.forEach(sk => {
+      if (!validSeriesKeys.has(sk)) return;
       if (!isSeriesForState(sk, s)) return;
 
       let c;
-      if (sk === SPECIAL_SERIES.PNC_SITES) c = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
-      else if (sk === COMPLIANCE_SERIES.DOES_NOT_HONOR) c = "#ef4444";
+      if (sk === COMPLIANCE_SERIES.DOES_NOT_HONOR) c = "#ef4444";
       else if (sk === COMPLIANCE_SERIES.HONORS) c = "#22c55e";
       else if (sk === COMPLIANCE_SERIES.NA_INVALID) c = "#94a3b8";
       else if (sk === SPECIAL_SERIES.NULL_SITES) c = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
@@ -380,11 +402,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
 
     const colorIndexCounters = {};
     selectedStates.forEach(stateCode => graphSelectedSeries.forEach(seriesKey => {
+      if (!validSeriesKeys.has(seriesKey)) return;
       if (!isSeriesForState(seriesKey, stateCode)) return;
 
       let baseColor;
-      if (seriesKey === SPECIAL_SERIES.PNC_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.PNC_SITES);
-      else if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) baseColor = "#ef4444";
+      if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) baseColor = "#ef4444";
       else if (seriesKey === COMPLIANCE_SERIES.HONORS) baseColor = "#22c55e";
       else if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) baseColor = "#94a3b8";
       else if (seriesKey === SPECIAL_SERIES.NULL_SITES) baseColor = getColorForSeries(SPECIAL_SERIES.NULL_SITES);
@@ -413,7 +435,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       }
 
       const isComplianceOrNull =
-        seriesKey === SPECIAL_SERIES.PNC_SITES ||
         seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR ||
         seriesKey === COMPLIANCE_SERIES.HONORS ||
         seriesKey === COMPLIANCE_SERIES.NA_INVALID ||
@@ -422,11 +443,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       const schemaFamily = !isComplianceOrNull ? parseSchemaToken(seriesKey)?.family : null;
 
       let data = unifiedMonthKeys.map(m => {
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
-          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
-          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => isSchemaRowNonCompliant(r.schema)).length;
-        }
-
         if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.DOES_NOT_HONOR).length;
@@ -463,7 +479,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       });
     }));
     return allDatasets;
-  }, [chartType, graphSelectedSeries, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys]);
+  }, [chartType, graphSelectedSeries, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
 
   const options = useMemo(() => ({
     responsive: true, maintainAspectRatio: false, normalized: true, customType: chartType,
@@ -594,7 +610,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         <div style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}>
 
           {/* LEFT SIDE: chart/table content */}
-          <div style={{ flex: "2 1 0%", minWidth: 0 }}>
+          <div style={{ flex: "2.8 1 0%", minWidth: 0 }}>
             {viewMode === "graph" ? (
               <>
                 <h2 className="section-title" style={{ marginTop: 0 }}>Track Compliance Evolution Over Time</h2>
@@ -705,7 +721,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           </div>
 
           {/* RIGHT SIDE: Filters */}
-          <div style={{ flex: "1 1 0%", minWidth: 0 }}>
+          <div style={{ flex: "1 1 0%", maxWidth: "340px", minWidth: 0 }}>
             <ChartSchemaFilterPanel
               seriesOptions={seriesOptions}
               selectedSeries={activeSeries}

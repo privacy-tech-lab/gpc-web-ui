@@ -64,7 +64,6 @@ import { renderJSONCell } from "./utils/renderJSONCell";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
-  isSchemaRowNonCompliant,
 } from "./utils/schemaClassification.js";
 import { SPECIAL_SERIES } from "./utils/colorPalettes.js";
 import datasetsManifest from "./generated/datasets.json";
@@ -128,6 +127,25 @@ function getColumnDisplayName(column, friendlyNames) {
   return friendlyNames[column] || column;
 }
 
+function normalizeKey(str) {
+  return String(str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function getColumnDescription(columnKey, friendlyName, descriptions) {
+  if (!descriptions) return "";
+
+  const targetKey1 = normalizeKey(columnKey);
+  const targetKey2 = normalizeKey(friendlyName);
+
+  for (const [key, desc] of Object.entries(descriptions)) {
+    const normKey = normalizeKey(key);
+    if (normKey && (normKey === targetKey1 || normKey === targetKey2)) {
+      return desc;
+    }
+  }
+  return "";
+}
+
 const STRUCTURED_COLUMNS = new Set([
   "urlclassification",
   "third_party_urls",
@@ -146,11 +164,8 @@ const isStateSensitiveSeries = (key) => {
   );
 };
 
-function buildPath(periodEntry, type, state) {
+function buildPath(periodEntry, state) {
   if (!periodEntry) return null;
-  if (type === "pnc") {
-    return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${periodEntry.key}.csv`;
-  }
   return `/${state}/${periodEntry.file}`;
 }
 
@@ -361,7 +376,7 @@ function App() {
   );
 
   const filePath = useMemo(
-    () => buildPath(currentPeriodEntry, "all", selectedState),
+    () => buildPath(currentPeriodEntry, selectedState),
     [currentPeriodEntry, selectedState],
   );
 
@@ -562,6 +577,7 @@ function App() {
         column === "Compliance Result" ||
         rawLower === schemaColLower ||
         rawLower === "site is null" ||
+        rawLower === "site_isnull" ||
         rawLower.includes("compliant") ||
         rawLower.includes("compliance") ||
         rawLower.includes("reason")
@@ -602,7 +618,6 @@ function App() {
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
         if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.["Site Is Null"] ?? row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
         return schema?.tokens?.includes(seriesKey);
       };
       base = base.filter((record) =>
@@ -705,20 +720,25 @@ function App() {
           <table className={pageRows.length < 4 ? "table--sparse" : undefined}>
             <thead>
               <tr>
-                {visibleTableColumns.map((header) => (
-                  <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
-                    {descriptionsOfColumns[header] ? (
-                      <div className="header-wrapper">
-                        <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
-                        <Tooltip content={descriptionsOfColumns[header]} position="bottom">
-                          <span className="tooltip-icon">?</span>
-                        </Tooltip>
-                      </div>
-                    ) : (
-                      <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
-                    )}
-                  </th>
-                ))}
+                {visibleTableColumns.map((header) => {
+                  const displayName = getColumnDisplayName(header, headerFriendlyNames);
+                  const desc = getColumnDescription(header, displayName, descriptionsOfColumns);
+
+                  return (
+                    <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
+                      {desc ? (
+                        <div className="header-wrapper">
+                          <span className="header-content">{displayName}</span>
+                          <Tooltip content={desc} position="bottom">
+                            <span className="tooltip-icon">?</span>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <span className="header-content">{displayName}</span>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -838,7 +858,6 @@ function App() {
       </div>
 
      <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", marginBottom: "20px" }}>
-  {/* Subtle compact pill badge */}
   <div style={{
     display: "inline-flex",
     alignItems: "center",
@@ -858,7 +877,6 @@ function App() {
     </span>
   </div>
 
-  {/* Slim single-line label and expanding search input */}
   <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
     <label 
       htmlFor="url-search" 
@@ -964,7 +982,9 @@ function App() {
                     const checked = visibleColumns.includes(column);
                     const id = `col-${column.replace(/\s+/g, "-")}`;
                     const displayName = getColumnDisplayName(column, headerFriendlyNames);
-                    const desc = descriptionsOfColumns[column] || `Toggle visibility for the ${displayName} column.`;
+                    const desc =
+                      getColumnDescription(column, displayName, descriptionsOfColumns) ||
+                      `Toggle visibility for the ${displayName} column.`;
 
                     return (
                       <Tooltip key={column} content={desc} position="top">
