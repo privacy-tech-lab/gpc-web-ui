@@ -22,7 +22,7 @@ import {
   parseSchemaToken,
 } from "./utils/schemaClassification.js";
 import { STATUS_COLOR_PALETTES, LEGACY_COLOR_PALETTE, SPECIAL_SERIES, getColorForSeries } from "./utils/colorPalettes.js";
-import { loadDataset, datasetCache } from "./utils/datasetCache.js";
+import { loadDataset } from "./utils/datasetCache.js";
 import datasetsManifest from "./generated/datasets.json";
 
 ChartJS.register(
@@ -205,23 +205,6 @@ function getGppStateShapeCanvas(sectionName, color, size) {
   return canvas;
 }
 
-// A 1x1 fully-transparent canvas used to hide a point on legend-hover.
-// Belt-and-suspenders alongside pointRadius: 0 — Chart.js's point draw()
-// does skip drawing when radius is ~0, but that guard sits in front of the
-// *built-in* shape switch, and empirically wasn't reliably suppressing the
-// custom canvas GPP shapes (which draw via ctx.drawImage and ignore
-// pointBackgroundColor/pointBorderColor entirely). Swapping the actual
-// pointStyle to this blank canvas hides any shape unconditionally.
-let blankPointStyleCanvas = null;
-function getBlankPointStyle() {
-  if (blankPointStyleCanvas || typeof document === "undefined") return blankPointStyleCanvas;
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  blankPointStyleCanvas = canvas;
-  return canvas;
-}
-
 function baseColorForSeries(seriesKey) {
   if (seriesKey === SPECIAL_SERIES.PNC_SITES) return getColorForSeries(SPECIAL_SERIES.PNC_SITES);
   if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) return "#ef4444";
@@ -251,12 +234,6 @@ function getSchemaFamilyLabel(seriesKey) {
     }
   }
   return null;
-}
-
-function normalizeRow(row) {
-  const normalized = {};
-  Object.keys(row || {}).forEach(key => { normalized[String(key).trim()] = row[key]; });
-  return normalized;
 }
 
 const ReasonTrendsChart = memo(function ReasonTrendsChart({
@@ -580,7 +557,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         const colorTotal = colorUsageCounts[baseColor] ?? 1;
         if (colorTotal > 1) {
           const spread = seen / (colorTotal - 1);
-          const percent = (spread - 0.5) * 0.35;
+          const percent = (spread - 0.5) * 0.6;
           color = shadeHex(baseColor, percent);
         }
       }
@@ -598,8 +575,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       let hoverPointStyle;
       if (schemaFamily === "gpp") {
         const gppSection = gppStateSectionName(parseSchemaToken(seriesKey)?.state);
-        const gppShape = getGppStateShapeCanvas(gppSection, color, 14);
-        hoverPointStyle = getGppStateShapeCanvas(gppSection, color, 20);
+        const gppShape = getGppStateShapeCanvas(gppSection, color, 12);
+        hoverPointStyle = getGppStateShapeCanvas(gppSection, color, 17);
         if (gppShape) pointStyle = gppShape;
       }
 
@@ -646,7 +623,12 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         // always reflect this line's current color — status-based or, with
         // Rainbowize on, its rainbow hue — the instant it's computed above.
         pointBackgroundColor: color, pointBorderColor: color,
-        fill: false, tension: 0.3, pointRadius: 6, pointHoverRadius: 8,
+        // Explicit (matches Chart.js's own line/bar defaults) rather than
+        // left unset, so the legend-hover memo below always has a concrete
+        // value to reset to — an unset key risks react-chartjs-2 leaving a
+        // stale hover-time value in place instead of clearing it.
+        borderWidth: chartType === "bar" ? 0 : 3,
+        fill: false, tension: 0.3, pointRadius: 5, pointHoverRadius: 7,
         pointStyle,
         borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
         spanGaps: true,
@@ -664,37 +646,32 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   // Re-skins baseDatasets for the currently hovered legend item — computed
   // as plain derived state (not by mutating the Chart.js instance directly)
   // so react-chartjs-2's normal prop-diffing update path applies it, the
-  // same reliable path that renders the chart from scratch. Mutating
-  // chart.data.datasets in a legend onHover callback and calling
-  // chart.update() directly was tried first but didn't reliably hide the
-  // custom canvas point shapes, likely due to Chart.js's internal shared-
-  // options caching for per-point styles.
+  // same reliable path that renders the chart from scratch.
   const datasets = useMemo(() => {
     if (hoveredDatasetIndex === null) return baseDatasets;
     const isLine = chartType === "line";
     return baseDatasets.map((ds, i) => {
       const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
-      // Line thickness is left alone in both branches — only visibility
-      // (color/points) changes on hover, not weight.
       if (i === hoveredDatasetIndex) {
         return {
           ...ds,
+          borderWidth: isLine ? 4 : ds.borderWidth,
           borderColor: baseColor,
           backgroundColor: baseColor,
           pointBackgroundColor: baseColor,
           pointBorderColor: baseColor,
-          pointRadius: isLine ? 8 : ds.pointRadius,
+          pointRadius: isLine ? 7 : ds.pointRadius,
           pointStyle: isLine ? (ds._hoverPointStyle || ds.pointStyle) : ds.pointStyle,
         };
       }
+      // Other lines just go thin and faded, not fully invisible — points
+      // keep their real shape/color/size so the chart still reads as "every
+      // line is here, just dimmed" rather than lines dropping out.
       return {
         ...ds,
-        borderColor: baseColor + "00",
-        backgroundColor: baseColor + "00",
-        pointBackgroundColor: baseColor + "00",
-        pointBorderColor: baseColor + "00",
-        pointRadius: isLine ? 0 : ds.pointRadius,
-        pointStyle: isLine ? getBlankPointStyle() : ds.pointStyle,
+        borderWidth: isLine ? 2 : ds.borderWidth,
+        borderColor: baseColor + "40",
+        backgroundColor: baseColor + "30",
       };
     });
   }, [baseDatasets, hoveredDatasetIndex, chartType]);
@@ -772,10 +749,10 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         },
       },
       tooltip: {
-        // intersect: true means the tooltip only shows when the cursor is
-        // actually touching a line/point, not just anywhere in the chart's
-        // plotting area at that month's x-position.
-        mode: "index", intersect: true, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12,
+        // intersect: false means hovering anywhere above a month's
+        // x-position shows that month's tooltip for every series, not just
+        // when the cursor is exactly touching a line/point.
+        mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12,
         titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true,
         callbacks: {
           label: (ctx) => {
@@ -859,7 +836,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                     <p style={{ margin: "0 0 8px", fontSize: "12px", color: "#94a3b8", fontStyle: "italic" }}>
                       Hover over the legend to isolate an individual line.
                     </p>
-                    <div className="chart-area">
+                    <div className="chart-area" onMouseLeave={() => setHoveredDatasetIndex(null)}>
                       {chartType === "line" ? (
                         <Line
                           ref={chartRef}

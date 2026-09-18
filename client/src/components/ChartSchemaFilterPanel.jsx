@@ -118,11 +118,13 @@ export default function ChartSchemaFilterPanel({
               const active = selectedSet.has(opt.key);
               
               let icon = "📊";
+              let iconColor;
               let label = opt.label;
-              
+
               if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
-              if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; }
+              // Matches this category's line color on the chart (#1B7EB5).
+              if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; iconColor = "#1B7EB5"; }
               if (opt.key === "Null Sites") { icon = "∅"; label = "All Null Sites"; }
 
               return (
@@ -136,7 +138,7 @@ export default function ChartSchemaFilterPanel({
                     {/* Tooltip isolated safely inside the text item layout wrapper */}
                     <Tooltip content={SPECIAL_DESCRIPTIONS[opt.key] || opt.description} position="top">
                       <span className="sfp__family-label" style={{ whiteSpace: "nowrap" }}>
-                        {icon} {label}
+                        <span style={iconColor ? { color: iconColor } : undefined}>{icon}</span> {label}
                       </span>
                     </Tooltip>
                     <PowerToggle
