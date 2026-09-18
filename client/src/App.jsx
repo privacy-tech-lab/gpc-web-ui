@@ -64,7 +64,6 @@ import { renderJSONCell } from "./utils/renderJSONCell";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
-  isSchemaRowNonCompliant,
 } from "./utils/schemaClassification.js";
 import { SPECIAL_SERIES } from "./utils/colorPalettes.js";
 import datasetsManifest from "./generated/datasets.json";
@@ -101,6 +100,15 @@ const STATE_MONTHS = {
   NJ: ["AugSeptOct2025", "Feb2026", "Apr2026"],
 };
 
+const CATEGORY_DESCRIPTIONS = {
+  compliance: "Shows whether a website honors privacy signals and explains any compliance issues.",
+  usps: "US Privacy String cookie and API settings for state privacy preferences.",
+  optanon: "OneTrust consent cookie settings before and after privacy signals are sent.",
+  wellknown: "Checks if a site has an official file announcing its privacy choices.",
+  gpp: "Global Privacy Platform data showing state-by-state privacy preferences.",
+  other: "General website details like domain names, scan times, and network data.",
+};
+
 const AVAILABLE_STATES = datasetsManifest.states;
 const DEFAULT_STATE = AVAILABLE_STATES.includes("CA")
   ? "CA"
@@ -117,6 +125,25 @@ function findPeriod(state, key) {
 function getColumnDisplayName(column, friendlyNames) {
   if (column === SCHEMA_CLASSIFICATION_COLUMN) return "Compliance Classification";
   return friendlyNames[column] || column;
+}
+
+function normalizeKey(str) {
+  return String(str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function getColumnDescription(columnKey, friendlyName, descriptions) {
+  if (!descriptions) return "";
+
+  const targetKey1 = normalizeKey(columnKey);
+  const targetKey2 = normalizeKey(friendlyName);
+
+  for (const [key, desc] of Object.entries(descriptions)) {
+    const normKey = normalizeKey(key);
+    if (normKey && (normKey === targetKey1 || normKey === targetKey2)) {
+      return desc;
+    }
+  }
+  return "";
 }
 
 const STRUCTURED_COLUMNS = new Set([
@@ -137,11 +164,8 @@ const isStateSensitiveSeries = (key) => {
   );
 };
 
-function buildPath(periodEntry, type, state) {
+function buildPath(periodEntry, state) {
   if (!periodEntry) return null;
-  if (type === "pnc") {
-    return `/${state}/Crawl_Data_${state} - PotentiallyNonCompliantSites${periodEntry.key}.csv`;
-  }
   return `/${state}/${periodEntry.file}`;
 }
 
@@ -352,7 +376,7 @@ function App() {
   );
 
   const filePath = useMemo(
-    () => buildPath(currentPeriodEntry, "all", selectedState),
+    () => buildPath(currentPeriodEntry, selectedState),
     [currentPeriodEntry, selectedState],
   );
 
@@ -553,6 +577,7 @@ function App() {
         column === "Compliance Result" ||
         rawLower === schemaColLower ||
         rawLower === "site is null" ||
+        rawLower === "site_isnull" ||
         rawLower.includes("compliant") ||
         rawLower.includes("compliance") ||
         rawLower.includes("reason")
@@ -593,7 +618,6 @@ function App() {
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
         if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.["Site Is Null"] ?? row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) return isSchemaRowNonCompliant(schema);
         return schema?.tokens?.includes(seriesKey);
       };
       base = base.filter((record) =>
@@ -696,20 +720,25 @@ function App() {
           <table className={pageRows.length < 4 ? "table--sparse" : undefined}>
             <thead>
               <tr>
-                {visibleTableColumns.map((header) => (
-                  <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
-                    {descriptionsOfColumns[header] ? (
-                      <div className="header-wrapper">
-                        <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
-                        <Tooltip content={descriptionsOfColumns[header]} position="bottom">
-                          <span className="tooltip-icon">?</span>
-                        </Tooltip>
-                      </div>
-                    ) : (
-                      <span className="header-content">{getColumnDisplayName(header, headerFriendlyNames)}</span>
-                    )}
-                  </th>
-                ))}
+                {visibleTableColumns.map((header) => {
+                  const displayName = getColumnDisplayName(header, headerFriendlyNames);
+                  const desc = getColumnDescription(header, displayName, descriptionsOfColumns);
+
+                  return (
+                    <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
+                      {desc ? (
+                        <div className="header-wrapper">
+                          <span className="header-content">{displayName}</span>
+                          <Tooltip content={desc} position="bottom">
+                            <span className="tooltip-icon">?</span>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <span className="header-content">{displayName}</span>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -768,9 +797,9 @@ function App() {
     <div className="table-section-view">
       <h2 className="section-title" style={{ marginTop: 0 }}>Filter GPC Web Crawler Data</h2>
 
-      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px", width: "100%" }}>
+      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label htmlFor="state-select" style={{ margin: 0, fontWeight: "500", color: "#334155" }}>State:</label>
+          <label htmlFor="state-select">State:</label>
           <select
             id="state-select"
             value={selectedState}
@@ -778,7 +807,6 @@ function App() {
               setSelectedState(e.target.value);
               setCurrentPage(1);
             }}
-            style={{ margin: 0 }}
           >
             {AVAILABLE_STATES.map((stateCode) => (
               <option key={stateCode} value={stateCode}>
@@ -789,7 +817,7 @@ function App() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label htmlFor="time-period-select" style={{ margin: 0, fontWeight: "500", color: "#334155" }}>Time Period:</label>
+          <label htmlFor="time-period-select">Time Period:</label>
           <select
             id="time-period-select"
             value={selectedTimePeriod}
@@ -797,7 +825,6 @@ function App() {
               setSelectedTimePeriod(e.target.value);
               setCurrentPage(1);
             }}
-            style={{ margin: 0 }}
           >
             {allowedTimePeriods.map((period) => (
               <option key={period.key} value={period.key}>
@@ -808,65 +835,75 @@ function App() {
         </div>
 
         <div style={{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
-          <button
-            ref={pickerBtnRef}
-            type="button"
-            aria-expanded={showColumnPicker}
-            aria-controls="column-picker"
-            className={showColumnPicker ? "active" : ""}
-            onClick={() => setShowColumnPicker((open) => !open)}
-            disabled={schemaModeUnavailable || loading}
-            style={{ margin: 0 }}
-          >
-            Edit Columns
-          </button>
+          <Tooltip content="Choose which columns to show or hide in the dataset table" position="top">
+            <button
+              ref={pickerBtnRef}
+              type="button"
+              aria-expanded={showColumnPicker}
+              aria-controls="column-picker"
+              className={showColumnPicker ? "active edit-columns-btn" : "edit-columns-btn"}
+              onClick={() => setShowColumnPicker((open) => !open)}
+              disabled={schemaModeUnavailable || loading}
+            >
+              Edit Columns
+            </button>
+          </Tooltip>
           <button
             onClick={handleExportFiltered}
             disabled={totalItems === 0 || loading || schemaModeUnavailable}
-            style={{ margin: 0 }}
           >
             Export filtered data ({totalItems})
           </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "20px", width: "100%" }}>
-        <div style={{ 
-          display: "flex", 
-          alignItems: "center", 
-          gap: "10px", 
-          background: "#f8fafc", 
-          border: "1px solid #cbd5e1", 
-          borderRadius: "6px", 
-          padding: "6px 14px",
-          height: "38px",
-          boxSizing: "border-box"
-        }}>
-          <span style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a" }}>
-            {totalItems.toLocaleString()}
-          </span>
-          <span style={{ fontSize: "12px", fontWeight: "600", color: "#334155", whiteSpace: "nowrap" }}>
-            Sites (after filters)
-          </span>
-        </div>
+     <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", marginBottom: "20px" }}>
+  <div style={{
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "4px 10px",
+    backgroundColor: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: "6px",
+    whiteSpace: "nowrap",
+    flexShrink: 0
+  }}>
+    <span style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>
+      {totalItems.toLocaleString()}
+    </span>
+    <span style={{ fontSize: "13px", fontWeight: "400", color: "#475569" }}>
+      Sites (after filters)
+    </span>
+  </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "250px" }}>
-          <label htmlFor="url-search" style={{ margin: 0, fontWeight: "500", color: "#334155", whiteSpace: "nowrap" }}>Search URL:</label>
-          <input
-            id="url-search"
-            type="text"
-            placeholder="e.g., example.com"
-            value={searchQuery}
-            onChange={(e) => {
-              setCurrentPage(1);
-              setSearchQuery(e.target.value);
-            }}
-            className="input"
-            style={{ width: "100%", margin: 0 }}
-          />
-        </div>
-      </div>
-
+  <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
+    <label 
+      htmlFor="url-search" 
+      style={{ 
+        whiteSpace: "nowrap", 
+        fontSize: "14px", 
+        fontWeight: "400", 
+        color: "#334155",
+        flexShrink: 0 
+      }}
+    >
+      Search URL:
+    </label>
+    <input
+      id="url-search"
+      type="text"
+      placeholder="e.g., example.com"
+      value={searchQuery}
+      onChange={(e) => {
+        setCurrentPage(1);
+        setSearchQuery(e.target.value);
+      }}
+      className="input"
+      style={{ flex: 1, width: "100%", height: "32px", padding: "4px 10px", fontSize: "14px", boxSizing: "border-box" }}
+    />
+  </div>
+</div>
       {schemaParseErrorCount > 0 && (
         <div className="notice-card notice-card--warning" role="status">
           Ignored invalid schema classifications in {schemaParseErrorCount} row
@@ -883,54 +920,118 @@ function App() {
           aria-label="Toggle columns"
           style={{ position: "absolute", zIndex: 100, width: "100%", boxSizing: "border-box" }}
         >
-          <div className="column-picker-header">
-            <strong>Select columns to display</strong>
-            <div className="column-picker-actions">
-              <button type="button" className="compact-btn" onClick={() => setVisibleColumns(displayHeaders)} disabled={displayHeaders.length === 0}>Select all</button>
-              <button
-                type="button"
-                className="compact-btn"
-                onClick={() => {
-                  const siteUrlCol = displayHeaders.find(isSiteUrlColumn);
-                  if (siteUrlCol) {
-                    setVisibleColumns([siteUrlCol]);
-                  } else if (displayHeaders.length > 0) {
-                    setVisibleColumns(displayHeaders.slice(0, 1));
-                  }
-                }}
-                disabled={visibleColumns.length <= 1 && visibleColumns.some(isSiteUrlColumn)}
-              >
-                Clear all
-              </button>
+          <div className="column-picker-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <strong style={{ fontSize: "18px", color: "#0f172a", fontWeight: "700" }}>Select columns to display</strong>
+            <div className="column-picker-actions" style={{ display: "flex", gap: "8px" }}>
+              <Tooltip content="Select and show all table columns" position="top">
+                <button
+                  type="button"
+                  className="compact-btn"
+                  onClick={() => setVisibleColumns(displayHeaders)}
+                  disabled={displayHeaders.length === 0}
+                  style={{ padding: "6px 14px", fontSize: "13px" }}
+                >
+                  Select all
+                </button>
+              </Tooltip>
+              <Tooltip content="Hide all columns except the primary website URL" position="top">
+                <button
+                  type="button"
+                  className="compact-btn"
+                  onClick={() => {
+                    const siteUrlCol = displayHeaders.find(isSiteUrlColumn);
+                    if (siteUrlCol) {
+                      setVisibleColumns([siteUrlCol]);
+                    } else if (displayHeaders.length > 0) {
+                      setVisibleColumns(displayHeaders.slice(0, 1));
+                    }
+                  }}
+                  disabled={visibleColumns.length <= 1 && visibleColumns.some(isSiteUrlColumn)}
+                  style={{ padding: "6px 14px", fontSize: "13px" }}
+                >
+                  Clear all
+                </button>
+              </Tooltip>
             </div>
           </div>
           
-          <div className="column-categories" style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "12px" }}>
+          <div className="column-categories" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             {groupedColumns.map((cat) => (
               <div key={cat.id} className="column-category-section">
-                <div style={{ fontWeight: "700", fontSize: "14px", color: "#1e293b", borderBottom: "2px solid #cbd5e1", paddingBottom: "4px", marginBottom: "10px" }}>
-                  {cat.name}
-                </div>
-                <div className="column-grid">
+                <Tooltip content={CATEGORY_DESCRIPTIONS[cat.id] || `Columns grouped under ${cat.name}`} position="top">
+                  <div style={{
+                    fontWeight: "700",
+                    fontSize: "15px",
+                    color: "#0f172a",
+                    borderBottom: "1px solid #cbd5e1",
+                    paddingBottom: "6px",
+                    marginBottom: "12px",
+                    width: "100%",
+                    cursor: "help"
+                  }}>
+                    {cat.name}
+                  </div>
+                </Tooltip>
+                <div className="column-grid" style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, 220px)",
+                  justifyContent: "start",
+                  gap: "10px"
+                }}>
                   {cat.columns.map((column) => {
                     const checked = visibleColumns.includes(column);
                     const id = `col-${column.replace(/\s+/g, "-")}`;
+                    const displayName = getColumnDisplayName(column, headerFriendlyNames);
+                    const desc =
+                      getColumnDescription(column, displayName, descriptionsOfColumns) ||
+                      `Toggle visibility for the ${displayName} column.`;
+
                     return (
-                      <label key={column} htmlFor={id} className="column-item">
-                        <input
-                          id={id} type="checkbox" checked={checked}
-                          onChange={() => {
-                            setVisibleColumns((prev) => {
-                              if (prev.includes(column)) {
-                                return prev.length === 1 ? prev : prev.filter((value) => value !== column);
-                              }
-                              return [...prev, column];
-                            });
-                            setCurrentPage(1);
+                      <Tooltip key={column} content={desc} position="top">
+                        <label
+                          htmlFor={id}
+                          className="column-item"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            width: "220px",
+                            height: "40px",
+                            padding: "8px 12px",
+                            border: "1px solid #cbd5e1",
+                            borderRadius: "8px",
+                            backgroundColor: "#ffffff",
+                            cursor: "pointer",
+                            fontSize: "14px",
+                            color: "#1e293b",
+                            boxSizing: "border-box",
+                            transition: "border-color 0.15s ease"
                           }}
-                        />
-                        <span>{getColumnDisplayName(column, headerFriendlyNames)}</span>
-                      </label>
+                        >
+                          <input
+                            id={id}
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setVisibleColumns((prev) => {
+                                if (prev.includes(column)) {
+                                  return prev.length === 1 ? prev : prev.filter((value) => value !== column);
+                                }
+                                return [...prev, column];
+                              });
+                              setCurrentPage(1);
+                            }}
+                            style={{ margin: 0, cursor: "pointer", width: "16px", height: "16px", flexShrink: 0 }}
+                          />
+                          <span style={{
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis"
+                          }}>
+                            {displayName}
+                          </span>
+                        </label>
+                      </Tooltip>
                     );
                   })}
                 </div>
@@ -1022,20 +1123,12 @@ function App() {
             line-height: 1.3em;
             max-height: 2.6em;
           }
-          /* When a search/filter narrows the table down to a handful of
-             rows, there's no reason to clamp/hide content behind a hover —
-             let every cell expand to its full content by default. */
           #table-scroll table.table--sparse td .cell-content {
             display: block;
             -webkit-line-clamp: unset;
             overflow: visible;
             max-height: none;
           }
-          /* Hovering expands the cell in normal document flow (not a
-             floating overlay) — the row grows taller in place, which pushes
-             later rows and the bottom pager further down the page. Always
-             grows downward; there's no "flip upward" special case since
-             nothing needs to escape the page bounds anymore. */
           #table-scroll table:not(.table--sparse) td:hover .cell-content {
             display: block;
             -webkit-line-clamp: unset;

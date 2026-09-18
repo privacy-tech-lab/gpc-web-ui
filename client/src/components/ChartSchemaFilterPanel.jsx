@@ -3,15 +3,6 @@ import { parseSchemaToken } from "../utils/schemaClassification.js";
 import Tooltip from "./Tooltip.jsx";
 import SchemaFilterPanel from "./SchemaFilterPanel.jsx";
 
-/**
- * ChartSchemaFilterPanel
- *
- * "Chart Schema Filters" for ReasonTrendsChart. Shows:
- * - A "Quick Series" section for the special/overview cards
- * (Null Sites and Top-Level Compliance Results)
- * - The full hierarchical SchemaFilterPanel for token-level chart series
- */
-
 const SPECIAL_KEYS = new Set([
   "Likely Does Not Honor GPC",
   "Likely Honors GPC",
@@ -19,8 +10,6 @@ const SPECIAL_KEYS = new Set([
   "Null Sites",
 ]);
 
-// Authoritative descriptions for the top-level compliance result cards,
-// derived from the Compliance Classifications methodology.
 const SPECIAL_DESCRIPTIONS = {
   "Likely Does Not Honor GPC":
     "At least one privacy string has 'Did Not Opt Out' (excluding the Well-known endpoint).",
@@ -59,7 +48,6 @@ export default function ChartSchemaFilterPanel({
     [selectedSeries]
   );
 
-  // Split options into special chips vs schema tokens
   const specialOptions = useMemo(
     () => seriesOptions.filter((o) => SPECIAL_KEYS.has(o.key)),
     [seriesOptions]
@@ -70,7 +58,6 @@ export default function ChartSchemaFilterPanel({
     [seriesOptions]
   );
 
-  // Build schemaFilterMeta shape for SchemaFilterPanel
   const schemaFilterMeta = useMemo(() => {
     const tokens = schemaTokenOptions.map((o) => o.key);
     const labels = {};
@@ -82,7 +69,6 @@ export default function ChartSchemaFilterPanel({
     return { tokens, labels, descriptions };
   }, [schemaTokenOptions]);
 
-  // Compute token-level selected list (only schema tokens, not specials)
   const selectedSchemaTokens = useMemo(
     () => schemaTokenOptions.map((o) => o.key).filter((k) => selectedSet.has(k)),
     [schemaTokenOptions, selectedSet]
@@ -102,18 +88,16 @@ export default function ChartSchemaFilterPanel({
   }
 
   return (
-    <div className="csfp">
-      {/* ── Header / global controls ── */}
+    <div className="csfp" style={{ width: "100%", boxSizing: "border-box" }}>
       <div className="csfp__header">
         <strong className="csfp__title">
           {viewMode === "table" ? "Table Filters" : "Chart Filters"}
         </strong>
       </div>
 
-      {/* ── Special / overview cards, responsive grid ── */}
       {specialOptions.length > 0 && (
-        <div className="csfp__specials-section" style={{ padding: "8px 0 16px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "10px" }}>
+        <div className="csfp__specials-section" style={{ padding: "8px 0 12px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
             {specialOptions.map((opt) => {
               const active = selectedSet.has(opt.key);
               
@@ -123,30 +107,33 @@ export default function ChartSchemaFilterPanel({
               if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
               if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; }
-              if (opt.key === "Null Sites") { icon = "∅"; label = "All Null Sites"; }
+              if (opt.key === "Null Sites") { icon = "∅"; label = "Null Sites"; }
 
               return (
                 <div
                   key={opt.key}
                   className={`sfp__family-card ${active ? "sfp__family-card--on" : ""}`}
-                  style={{ cursor: "pointer", margin: 0, width: "100%", boxSizing: "border-box" }}
+                  style={{ cursor: "pointer", margin: 0, boxSizing: "border-box", overflow: "hidden", width: "100%" }}
                   onClick={() => onToggle(opt.key)}
                 >
-                  <div className="sfp__family-header">
-                    {/* Tooltip isolated safely inside the text item layout wrapper */}
-                    <Tooltip content={SPECIAL_DESCRIPTIONS[opt.key] || opt.description} position="top">
-                      <span className="sfp__family-label" style={{ whiteSpace: "nowrap" }}>
-                        {icon} {label}
-                      </span>
-                    </Tooltip>
-                    <PowerToggle
-                      on={active}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggle(opt.key);
-                      }}
-                      label={label}
-                    />
+                  <div className="sfp__family-header" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                    <div style={{ flex: "1 1 0%", minWidth: 0 }}>
+                      <Tooltip content={SPECIAL_DESCRIPTIONS[opt.key] || opt.description} position="top">
+                        <span className="sfp__family-label" style={{ whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "anywhere", display: "block" }}>
+                          {icon} {label}
+                        </span>
+                      </Tooltip>
+                    </div>
+                    <div style={{ flexShrink: 0 }}>
+                      <PowerToggle
+                        on={active}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggle(opt.key);
+                        }}
+                        label={label}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -155,8 +142,7 @@ export default function ChartSchemaFilterPanel({
         </div>
       )}
 
-      {/* ── Hierarchical token filter ── */}
-      <div className="csfp__schema-panel">
+      <div className="csfp__schema-panel" style={{ width: "100%" }}>
         <SchemaFilterPanel
           schemaFilterMeta={schemaFilterMeta}
           selectedSchemaTokens={selectedSchemaTokens}
