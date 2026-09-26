@@ -102,11 +102,12 @@ export default function ChartSchemaFilterPanel({
               const active = selectedSet.has(opt.key);
               
               let icon = "📊";
+              let iconColor;
               let label = opt.label;
-              
+
               if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
-              if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; }
+              if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; iconColor = "#1B7EB5"; }
               if (opt.key === "Null Sites") { icon = "∅"; label = "Null Sites"; }
 
               return (
@@ -116,11 +117,11 @@ export default function ChartSchemaFilterPanel({
                   style={{ cursor: "pointer", margin: 0, boxSizing: "border-box", overflow: "hidden", width: "100%" }}
                   onClick={() => onToggle(opt.key)}
                 >
-                  <div className="sfp__family-header" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <div className="sfp__family-header" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                     <div style={{ flex: "1 1 0%", minWidth: 0 }}>
                       <Tooltip content={SPECIAL_DESCRIPTIONS[opt.key] || opt.description} position="top">
                         <span className="sfp__family-label" style={{ whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "anywhere", display: "block" }}>
-                          {icon} {label}
+                          <span style={iconColor ? { color: iconColor } : undefined}>{icon}</span> {label}
                         </span>
                       </Tooltip>
                     </div>
