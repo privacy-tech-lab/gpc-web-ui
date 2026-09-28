@@ -17,7 +17,6 @@ import Tooltip from "./components/Tooltip";
 import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
-  isSchemaRowNonCompliant,
   sortSchemaTokens,
   parseSchemaToken,
 } from "./utils/schemaClassification.js";
@@ -50,18 +49,12 @@ const COMPLIANCE_DESCRIPTIONS = {
 };
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
-  [SPECIAL_SERIES.PNC_SITES]:
-    "Counts sites where at least one opt-out signal (USPS, OptanonConsent, or GPP) did not opt the user out after GPC. Well-known is excluded (it reflects GPC support, not opt-out behavior). Sites with no opt-out signal (could not determine) and sites that opted out (compliant) are excluded.",
   [SPECIAL_SERIES.NULL_SITES]:
     "Counts rows where site_isnull is TRUE in the main dataset for each month.",
 };
 
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
 
-// These four are mutually exclusive classifications of a site's GPC
-// compliance result — a site can only be one of them. The chips act as
-// logical ANDs, so in table view (where they gate which rows show) only one
-// may be active at a time.
 const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   COMPLIANCE_SERIES.DOES_NOT_HONOR,
   COMPLIANCE_SERIES.HONORS,
@@ -226,6 +219,29 @@ const SCHEMA_FAMILY_MATCHERS = [
   { prefixes: ["gpp"],                                        label: "GPP" },
 ];
 
+const GPP_SECTION_TO_STATE = {
+  usnat: "US",
+  usca: "CA",
+  usco: "CO",
+  usct: "CT",
+  usnj: "NJ",
+  usva: "VA",
+  ustx: "TX",
+  usmt: "MT",
+  usor: "OR",
+};
+
+function isSeriesForState(seriesKey, stateCode) {
+  const parsed = parseSchemaToken(seriesKey);
+  if (parsed?.family === "gpp" && parsed?.state) {
+    const targetState = GPP_SECTION_TO_STATE[parsed.state.toLowerCase()] || parsed.state.toUpperCase();
+    if (targetState !== "US" && targetState !== stateCode) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function getSchemaFamilyLabel(seriesKey) {
   const lower = String(seriesKey).toLowerCase();
   for (const { prefixes, label } of SCHEMA_FAMILY_MATCHERS) {
@@ -273,19 +289,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   const [hoveredDatasetIndex, setHoveredDatasetIndex] = useState(null);
   const chartRef = useRef(null);
 
-  // Which schema families (USPS / OptanonConsent / Well-Known / GPP) are currently selected.
-  // Keyed by display label so variants (well_known / well-known) never double-count.
   const activeSchemaFamilies = useMemo(() => {
     const seen = new Set();
     graphSelectedSeries.forEach(k => {
       const label = getSchemaFamilyLabel(k);
       if (label) seen.add(label);
     });
-    // Return in the canonical order defined by SCHEMA_FAMILY_MATCHERS
     return SCHEMA_FAMILY_MATCHERS.map(m => m.label).filter(l => seen.has(l));
   }, [graphSelectedSeries]);
 
-  // Footnote sentence built from only the active families
   const footnoteText = useMemo(() => {
     if (activeSchemaFamilies.length === 0) return null;
     const list =
@@ -328,10 +340,9 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     const originalDatasets = chart.data.datasets;
     chart.update("none");
 
-    // Draw title + chart (+ optional footnote) onto a new canvas
     const canvas = chart.canvas;
     const scale = window.devicePixelRatio || 1;
-    const totalTopPad = Math.round(40 * scale); // space for title
+    const totalTopPad = Math.round(40 * scale);
 
     const showFootnote = showDataLabels === "percentages" && Boolean(footnoteText);
     const footnoteFontSize = Math.round(11 * scale);
@@ -339,7 +350,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     const footnotePadX = Math.round(16 * scale);
     const footnotePadY = Math.round(10 * scale);
 
-    // Measure how many lines the footnote needs (simple word-wrap)
     function wrapText(ctx2, text, maxWidth) {
       const words = text.split(" ");
       const lines = [];
@@ -357,7 +367,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       return lines;
     }
 
-    // Temporary canvas just for measuring footnote wrap
     const measureCanvas = document.createElement("canvas");
     const measureCtx = measureCanvas.getContext("2d");
     measureCtx.font = `italic ${footnoteFontSize}px 'Segoe UI', system-ui, sans-serif`;
@@ -373,11 +382,9 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     newCanvas.height = canvas.height + totalTopPad + totalBottomPad;
     const ctx = newCanvas.getContext("2d");
 
-    // White background
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
 
-    // Title
     const titleFontSize = Math.round(15 * scale);
     ctx.fillStyle = "#1e293b";
     ctx.font = `700 ${titleFontSize}px 'Segoe UI', system-ui, sans-serif`;
@@ -385,10 +392,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     ctx.textBaseline = "middle";
     ctx.fillText("Track Compliance Evolution Over Time", newCanvas.width / 2, totalTopPad / 2);
 
-    // Chart image below the title (datalabels already rendered on canvas as-is)
     ctx.drawImage(canvas, 0, totalTopPad);
 
-    // Footnote below chart
     if (showFootnote) {
       ctx.font = `italic ${footnoteFontSize}px 'Segoe UI', system-ui, sans-serif`;
       ctx.fillStyle = "#94a3b8";
@@ -406,12 +411,10 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     a.download = `Trend_${selectedStates.join("_")}.png`;
     a.click();
 
-    // Restore datasets
     chart.data.datasets = originalDatasets;
     chart.update("none");
   }
 
-  // Preload data for ALL states upfront on initial load using datasetCache
   useEffect(() => {
     let cancelled = false;
     async function loadAllStates() {
@@ -490,6 +493,31 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
   }, [schemaSeriesMeta]);
 
+  const validSeriesKeys = useMemo(() => {
+    return new Set(seriesOptions.map(o => o.key));
+  }, [seriesOptions]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const validGraph = graphSelectedSeries.filter(k => validSeriesKeys.has(k));
+    if (validGraph.length !== graphSelectedSeries.length) {
+      setGraphSelectedSeries(validGraph);
+    }
+
+    const validTable = tableSelectedSeries.filter(k => validSeriesKeys.has(k));
+    if (validTable.length !== tableSelectedSeries.length) {
+      setTableSelectedSeries(validTable);
+    }
+  }, [loading, validSeriesKeys, graphSelectedSeries, tableSelectedSeries, setGraphSelectedSeries, setTableSelectedSeries]);
+
+  useEffect(() => {
+    const validStates = selectedStates.filter(s => AVAILABLE_STATES.includes(s));
+    if (validStates.length !== selectedStates.length) {
+      setSelectedStates(validStates.length > 0 ? validStates : ["CA"]);
+    }
+  }, [selectedStates, setSelectedStates]);
+
   function shadeHex(hex, percent) {
     if (!hex || hex[0] !== "#") return hex;
     const h = hex.replace("#", "");
@@ -523,8 +551,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     // selection (base color depends only on the series, not the state) —
     // only used for the non-rainbow gentle same-color shading below.
     const colorUsageCounts = {};
-    selectedStates.forEach(() => graphSelectedSeries.forEach(seriesKey => {
-      const c = baseColorForSeries(seriesKey);
+    selectedStates.forEach(s => graphSelectedSeries.forEach(sk => {
+      if (!validSeriesKeys.has(sk)) return;
+      if (!isSeriesForState(sk, s)) return;
+
+      const c = baseColorForSeries(sk);
       colorUsageCounts[c] = (colorUsageCounts[c] || 0) + 1;
     }));
     const useRainbow = rainbowize && hasColorDuplicates;
@@ -533,9 +564,12 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     let lineIndex = 0;
 
     selectedStates.forEach(stateCode => graphSelectedSeries.forEach(seriesKey => {
-      const baseColor = baseColorForSeries(seriesKey);
-      const seen = colorSeenCounts[baseColor] ?? 0;
-      colorSeenCounts[baseColor] = seen + 1;
+    if (!validSeriesKeys.has(seriesKey)) return;
+    if (!isSeriesForState(seriesKey, stateCode)) return;
+
+    const baseColor = baseColorForSeries(seriesKey);
+    const seen = colorSeenCounts[baseColor] ?? 0;
+    colorSeenCounts[baseColor] = seen + 1;
 
       // Color is fixed to status (opted_out green, did_not_opt_out red,
       // invalid/na blue, null gray) regardless of family — point shape
@@ -564,7 +598,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       lineIndex++;
 
       const isComplianceOrNull =
-        seriesKey === SPECIAL_SERIES.PNC_SITES ||
         seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR ||
         seriesKey === COMPLIANCE_SERIES.HONORS ||
         seriesKey === COMPLIANCE_SERIES.NA_INVALID ||
@@ -581,11 +614,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       }
 
       let data = unifiedMonthKeys.map(m => {
-        if (seriesKey === SPECIAL_SERIES.PNC_SITES) {
-          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
-          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => isSchemaRowNonCompliant(r.schema)).length;
-        }
-
         if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.DOES_NOT_HONOR).length;
@@ -604,9 +632,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
       });
 
-      // Denominators for percentage labels:
-      // - compliance/null series → total sites for that state/month
-      // - schema token series (usps, optanonConsent, wellKnown, gpp) → sites with any token from that family
       const denominators = unifiedMonthKeys.map(m => {
         const allRecs = stateMonthToAllRecords[stateCode]?.[m] || [];
         if (isComplianceOrNull) return allRecs.length;
@@ -641,40 +666,40 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       });
     }));
     return allDatasets;
-  }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys]);
+  }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
 
-  // Re-skins baseDatasets for the currently hovered legend item — computed
-  // as plain derived state (not by mutating the Chart.js instance directly)
-  // so react-chartjs-2's normal prop-diffing update path applies it, the
-  // same reliable path that renders the chart from scratch.
-  const datasets = useMemo(() => {
-    if (hoveredDatasetIndex === null) return baseDatasets;
-    const isLine = chartType === "line";
-    return baseDatasets.map((ds, i) => {
-      const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
-      if (i === hoveredDatasetIndex) {
+    // Re-skins baseDatasets for the currently hovered legend item — computed
+    // as plain derived state (not by mutating the Chart.js instance directly)
+    // so react-chartjs-2's normal prop-diffing update path applies it, the
+    // same reliable path that renders the chart from scratch.
+    const datasets = useMemo(() => {
+      if (hoveredDatasetIndex === null) return baseDatasets;
+      const isLine = chartType === "line";
+      return baseDatasets.map((ds, i) => {
+        const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
+        if (i === hoveredDatasetIndex) {
+          return {
+            ...ds,
+            borderWidth: isLine ? 4 : ds.borderWidth,
+            borderColor: baseColor,
+            backgroundColor: baseColor,
+            pointBackgroundColor: baseColor,
+            pointBorderColor: baseColor,
+            pointRadius: isLine ? 7 : ds.pointRadius,
+            pointStyle: isLine ? (ds._hoverPointStyle || ds.pointStyle) : ds.pointStyle,
+          };
+        }
+        // Other lines just go thin and faded, not fully invisible — points
+        // keep their real shape/color/size so the chart still reads as "every
+        // line is here, just dimmed" rather than lines dropping out.
         return {
           ...ds,
-          borderWidth: isLine ? 4 : ds.borderWidth,
-          borderColor: baseColor,
-          backgroundColor: baseColor,
-          pointBackgroundColor: baseColor,
-          pointBorderColor: baseColor,
-          pointRadius: isLine ? 7 : ds.pointRadius,
-          pointStyle: isLine ? (ds._hoverPointStyle || ds.pointStyle) : ds.pointStyle,
+          borderWidth: isLine ? 2 : ds.borderWidth,
+          borderColor: baseColor + "40",
+          backgroundColor: baseColor + "30",
         };
-      }
-      // Other lines just go thin and faded, not fully invisible — points
-      // keep their real shape/color/size so the chart still reads as "every
-      // line is here, just dimmed" rather than lines dropping out.
-      return {
-        ...ds,
-        borderWidth: isLine ? 2 : ds.borderWidth,
-        borderColor: baseColor + "40",
-        backgroundColor: baseColor + "30",
-      };
-    });
-  }, [baseDatasets, hoveredDatasetIndex, chartType]);
+      });
+    }, [baseDatasets, hoveredDatasetIndex, chartType]);
 
   const options = useMemo(() => ({
     responsive: true, maintainAspectRatio: false, normalized: true, customType: chartType,
@@ -774,9 +799,23 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     },
     scales: {
       y: { beginAtZero: true, grid: { color: "rgba(0, 0, 0, 0.05)", drawBorder: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Number of Sites", font: { size: 12, weight: "600" }, color: "#475569" } },
-      x: { grid: { display: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Month", font: { size: 12, weight: "600" }, color: "#475569" } },
+      x: {
+        grid: { display: false },
+        border: { display: false },
+        ticks: {
+          font: { size: 12 },
+          color: "#64748b",
+          autoSkip: false,
+          callback: function (val, index) {
+            const total = labels.length;
+            const step = Math.max(1, Math.floor(total / 8));
+            return index % step === 0 ? (labels[index] ?? this.getLabelForValue(val)) : null;
+          },
+        },
+        title: { display: true, text: "Month", font: { size: 12, weight: "600" }, color: "#475569" },
+      },
     },
-  }), [baseDatasets, chartType, showDataLabels]);
+  }), [baseDatasets, chartType, labels, showDataLabels]);
 
   const activeSeries = viewMode === "table" ? tableSelectedSeries : graphSelectedSeries;
   const setActiveSeries = viewMode === "table" ? setTableSelectedSeries : setGraphSelectedSeries;
@@ -787,7 +826,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         <div style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}>
 
           {/* LEFT SIDE: chart/table content */}
-          <div style={{ flex: "1", minWidth: 0 }}>
+          <div style={{ flex: "2.8 1 0%", minWidth: 0 }}>
             {viewMode === "graph" ? (
               <>
                 <h2 className="section-title" style={{ marginTop: 0 }}>Track Compliance Evolution Over Time</h2>
@@ -929,11 +968,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           </div>
 
           {/* RIGHT SIDE: Filters */}
-          <div
-            style={{
-              flex: "0 0 350px",
-            }}
-          >
+          <div style={{ flex: "1 1 0%", maxWidth: "340px", minWidth: 0 }}>
             <ChartSchemaFilterPanel
               seriesOptions={seriesOptions}
               selectedSeries={activeSeries}

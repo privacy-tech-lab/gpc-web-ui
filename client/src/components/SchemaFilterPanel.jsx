@@ -3,15 +3,12 @@ import { parseSchemaToken, getSchemaTokenLabel } from "../utils/schemaClassifica
 import Tooltip from "./Tooltip.jsx";
 import { STATUS_COLOR_PALETTES } from "../utils/colorPalettes.js";
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
 const FAMILY_CONFIG = [
   { key: "usps",           label: "USPS",                icon: "🔒" },
   { key: "optanonConsent", label: "OptanonConsent Cookie", icon: "🍪" },
   { key: "wellKnown",      label: "Well-Known Endpoint",  icon: "🌐" },
 ];
 
-// Maps internal state codes → technical GPP string segment names
 const GPP_STATE_NAMES = {
   US: "usnat",
   CA: "usca",
@@ -24,11 +21,6 @@ const GPP_STATE_NAMES = {
   OR: "usor",
 };
 
-// Inverse of GPP_STATE_NAMES — the raw GPP "section" field now comes through
-// as the technical segment name directly (e.g. "usca") rather than the old
-// 2-letter state code (e.g. "CA"). This normalizes either shape to the
-// 2-letter code so state comparisons/filtering keep working regardless of
-// which format the underlying data uses.
 const GPP_SECTION_TO_STATE_CODE = Object.fromEntries(
   Object.entries(GPP_STATE_NAMES).map(([code, section]) => [section, code])
 );
@@ -37,13 +29,6 @@ function normalizeStateCode(state) {
   return GPP_SECTION_TO_STATE_CODE[state] || state;
 }
 
-// Which GPP fields exist for a given section, per spec. State-specific
-// sections: CA carries Sale + Sharing; every other state carries Sale +
-// Targeted Ads (not Sharing). usnat always carries all three, regardless of
-// which state it's paired with. This is deliberately independent of which
-// fields happen to have tokens in the currently-loaded data, so the
-// breakdown stays consistent even if a given crawl period has no classified
-// sites for a field.
 const NAT_ALL_FIELDS = ["SaleOptOut", "SharingOptOut", "TargetedAdvertisingOptOut"];
 const STATE_CA_FIELDS = ["SaleOptOut", "SharingOptOut"];
 const STATE_OTHER_FIELDS = ["SaleOptOut", "TargetedAdvertisingOptOut"];
@@ -70,16 +55,11 @@ const GPP_FIELD_SHORT = {
   TargetedAdvertisingOptOut: "Targeted Ads",
 };
 
-// usnat always exposes all three fields, but Sharing/Targeted Ads don't
-// legally apply the same way for every state — called out in chart view
-// where multiple states' usnat context can be compared side by side.
 const GPP_USNAT_FIELD_NOTES = {
   SharingOptOut:             "Only legally applies to CA",
   TargetedAdvertisingOptOut: "Does not legally apply to CA",
 };
 
-// Table view scopes usnat to a single paired state, so the note can name
-// that state specifically instead of speaking generically about CA.
 const GPP_USNAT_TABLE_SHARING_EXCEPTIONS = new Set(["CT", "CO", "NJ"]);
 
 function usnatTableFieldNote(field, tableState) {
@@ -92,7 +72,6 @@ function usnatTableFieldNote(field, tableState) {
   return null;
 }
 
-// Hover descriptions for each privacy string family card
 const FAMILY_DESCRIPTIONS = {
   usps: "The US Privacy String (USPS) is a legacy consent signal used by sites to communicate a user's privacy choices.",
   optanonConsent: "The OptanonConsent cookie is OneTrust's mechanism for storing and communicating a user's consent preferences across a site.",
@@ -100,7 +79,6 @@ const FAMILY_DESCRIPTIONS = {
   gpp: "The Global Privacy Platform (GPP) string is a standardized consent signal covering multiple US state privacy laws, with separate sections per state.",
 };
 
-// Hover descriptions for each status pill, per privacy string family
 const STATUS_DESCRIPTIONS = {
   usps: {
     opted_out: "The site opted the user out of sale after receiving the GPC signal.",
@@ -121,8 +99,6 @@ const STATUS_DESCRIPTIONS = {
   },
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function familyTokens(allTokens, family) {
   if (family === "gpp") return allTokens.filter((t) => t.startsWith("gpp|"));
   return allTokens.filter((t) => t.startsWith(family + "|"));
@@ -133,7 +109,6 @@ function statusTokens(subset, status) {
 }
 
 function partitionGpp(allTokens) {
-  // Returns { [state]: { [field]: { [status]: token } } }
   const result = {};
   allTokens.forEach((token) => {
     const parsed = parseSchemaToken(token);
@@ -155,8 +130,6 @@ function sortedStates(stateMap) {
     return na.localeCompare(nb);
   });
 }
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function PowerToggle({ on, onClick, label }) {
   return (
@@ -219,8 +192,6 @@ function StatusPills({ subset, selectedSet, onToggle, size, descriptions = {} })
   );
 }
 
-// ─── GPP Card ─────────────────────────────────────────────────────────────────
-
 function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onReplace, labels, isOn, geoStates, viewMode }) {
   const gppMap = useMemo(() => partitionGpp(tokens), [tokens]);
   const states = useMemo(() => {
@@ -258,16 +229,11 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
       onRemove(stateTokens);
       return;
     }
-    // Default: just Sale opted_out for this state
     const toAdd = stateTokens.filter((t) => {
       const parsed = parseSchemaToken(t);
       return parsed?.field === "SaleOptOut" && parsed?.status === "opted_out";
     });
     const nextTokens = toAdd.length > 0 ? toAdd : stateTokens;
-    // Most sites only ever have a usnat OR a state-specific GPP string, not
-    // both — in table view (an AND filter over rows) selecting usnat and a
-    // state chip together would almost always yield zero rows, so only one
-    // state chip may be active at a time there.
     if (viewMode === "table") {
       const siblingTokens = states
         .filter((s) => s !== state)
@@ -290,26 +256,24 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
   const hasActiveSelection = (state) =>
     getExpectedTokensForState(state).some((t) => selectedSet.has(t));
 
-  // Only show the field breakdown for states with an active selection —
-  // table view keeps at most one state chip selected at a time (see
-  // toggleState), so this naturally narrows to just that chip there, while
-  // chart view can still show several side by side when multiple are on.
   const detailStates = states.filter(hasActiveSelection);
 
   return (
-    <div className={`sfp__family-card sfp__family-card--gpp ${isOn ? "sfp__family-card--on" : ""}`}>
-      {/* Clean header layout matching standard card structures */}
-      <div className="sfp__family-header">
-        <Tooltip content={FAMILY_DESCRIPTIONS.gpp} position="top">
-          <span className="sfp__family-label">📋 GPP</span>
-        </Tooltip>
-        <PowerToggle on={isOn} onClick={() => onToggleFamily("gpp")} label="GPP" />
+    <div className={`sfp__family-card sfp__family-card--gpp ${isOn ? "sfp__family-card--on" : ""}`} style={{ margin: 0, boxSizing: "border-box", overflow: "hidden", width: "100%" }}>
+      <div className="sfp__family-header" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <div style={{ flex: "1 1 0%", minWidth: 0 }}>
+          <Tooltip content={FAMILY_DESCRIPTIONS.gpp} position="top">
+            <span className="sfp__family-label" style={{ whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "anywhere", display: "block" }}>📋 GPP</span>
+          </Tooltip>
+        </div>
+        <div style={{ flexShrink: 0 }}>
+          <PowerToggle on={isOn} onClick={() => onToggleFamily("gpp")} label="GPP" />
+        </div>
       </div>
 
       {isOn && (
         <div className="sfp__gpp-body">
-          {/* State chips */}
-          <div className="sfp__gpp-states" style={{ marginTop: "12px" }}>
+          <div className="sfp__gpp-states" style={{ marginTop: "8px" }}>
             {states.map((state) => (
               <div key={state} className="sfp__gpp-state-wrapper">
                 <button
@@ -323,7 +287,6 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
             ))}
           </div>
 
-          {/* Field breakdown — shown only for states with an active selection */}
           {detailStates.length > 0 && (
             <div className="sfp__gpp-detail">
               {detailStates.map((state) => {
@@ -406,8 +369,6 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
   );
 }
 
-// ─── SchemaFilterPanel ────────────────────────────────────────────────────────
-
 export default function SchemaFilterPanel({
   schemaFilterMeta,
   selectedSchemaTokens,
@@ -423,9 +384,6 @@ export default function SchemaFilterPanel({
     [selectedSchemaTokens]
   );
 
-  // Sync expanded families when tokens change:
-  // - open any family that has a newly-selected token
-  // - close any family whose tokens have all been deselected
   useEffect(() => {
     setExpandedFamilies((prev) => {
       const next = new Set(prev);
@@ -446,8 +404,6 @@ export default function SchemaFilterPanel({
     });
   }, [selectedSchemaTokens, tokens]);
 
-  // ── helpers ──
-
   function add(toAdd) {
     const next = new Set([...selectedSchemaTokens, ...toAdd]);
     onChange([...next]);
@@ -458,9 +414,6 @@ export default function SchemaFilterPanel({
     onChange(selectedSchemaTokens.filter((t) => !removeSet.has(t)));
   }
 
-  // Atomically swap toRemove out for toAdd in one onChange call — calling
-  // remove() then add() separately would each compute off the same stale
-  // selectedSchemaTokens closure and the second call would undo the first.
   function replaceStatus(toAdd, toRemove) {
     const removeSet = new Set(toRemove);
     const kept = selectedSchemaTokens.filter((t) => !removeSet.has(t));
@@ -489,11 +442,6 @@ export default function SchemaFilterPanel({
     });
 
     if (familyKey === "gpp") {
-      // Default to just Sale opted_out — usnat only in table view (its
-      // AND-filter semantics mean one state/status is all that makes
-      // sense), or every relevant state in chart view. This mirrors the
-      // per-state-chip default so turning GPP on via the power toggle
-      // isn't a bigger jump than clicking an individual state chip.
       const relevantStates =
         viewMode === "table"
           ? new Set(["US"])
@@ -526,7 +474,7 @@ export default function SchemaFilterPanel({
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "12px", alignItems: "start" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
       {FAMILY_CONFIG.map(({ key, label, icon }) => {
         const ft = familyTokens(tokens, key);
         const isOn = expandedFamilies.has(key);
@@ -534,19 +482,23 @@ export default function SchemaFilterPanel({
           <div
             key={key}
             className={`sfp__family-card ${isOn ? "sfp__family-card--on" : ""}`}
-            style={{ margin: 0 }}
+            style={{ margin: 0, boxSizing: "border-box", overflow: "hidden", width: "100%" }}
           >
-            <div className="sfp__family-header">
-              <Tooltip content={FAMILY_DESCRIPTIONS[key]} position="top">
-                <span className="sfp__family-label">
-                  {icon} {label}
-                </span>
-              </Tooltip>
-              <PowerToggle
-                on={isOn}
-                onClick={() => toggleFamily(key)}
-                label={label}
-              />
+            <div className="sfp__family-header" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+              <div style={{ flex: "1 1 0%", minWidth: 0 }}>
+                <Tooltip content={FAMILY_DESCRIPTIONS[key]} position="top">
+                  <span className="sfp__family-label" style={{ whiteSpace: "normal", wordBreak: "break-word", overflowWrap: "anywhere", display: "block" }}>
+                    {icon} {label}
+                  </span>
+                </Tooltip>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                <PowerToggle
+                  on={isOn}
+                  onClick={() => toggleFamily(key)}
+                  label={label}
+                />
+              </div>
             </div>
             {isOn && (
               <StatusPills
