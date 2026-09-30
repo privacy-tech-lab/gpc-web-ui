@@ -29,7 +29,7 @@
   "compliance_classification": "Breakdown of site compliance according to each specific method of possible opt outs (e.g., USPS, OptanonConsent Cookie, or GPP SaleOptOut field).",
   "site_isnull": "A boolean indicating if a site has no privacy strings, cookies, or GPP data detected before or after sending a GPC signal.",
   "reasons_non_compliant": "Specific reasons why the site was evaluated as non-compliant after receiving GPC.",
-  "Tranco": "Website popularity ranking based on global web traffic (lower numbers indicate higher traffic).",
+  "Tranco": "Website popularity ranking based on global web traffic (lower numbers indicate higher traffic). Data is from 2023.",
   "third_party_count": "Total count of external third-party domains loaded by the website. Crawls before July 2026 undercount this value.",
   "third_party_urls": "List of external web addresses loaded on the page. Crawls before July 2026 undercount this list.",
   "unique_ad_networks": "Names of distinct advertising networks detected on the page.",
