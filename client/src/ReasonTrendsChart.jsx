@@ -40,12 +40,14 @@ const COMPLIANCE_SERIES = {
   DOES_NOT_HONOR: "Likely Does Not Honor GPC",
   HONORS: "Likely Honors GPC",
   NA_INVALID: "Not Applicable/Invalid/Missing",
+  NONE: "None",
 };
 
 const COMPLIANCE_DESCRIPTIONS = {
   [COMPLIANCE_SERIES.DOES_NOT_HONOR]: "Sites whose compliance classification explicitly states that they likely do not honor GPC.",
   [COMPLIANCE_SERIES.HONORS]: "Sites whose compliance classification explicitly states that they likely honor GPC.",
   [COMPLIANCE_SERIES.NA_INVALID]: "Sites where GPC compliance could not be determined or is not applicable.",
+  [COMPLIANCE_SERIES.NONE]: "Sites whose compliance result is recorded as None.",
 };
 
 const SPECIAL_SERIES_DESCRIPTIONS = {
@@ -59,6 +61,7 @@ const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   COMPLIANCE_SERIES.DOES_NOT_HONOR,
   COMPLIANCE_SERIES.HONORS,
   COMPLIANCE_SERIES.NA_INVALID,
+  COMPLIANCE_SERIES.NONE,
   SPECIAL_SERIES.NULL_SITES,
 ]);
 
@@ -203,6 +206,8 @@ function baseColorForSeries(seriesKey) {
   if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) return "#ef4444";
   if (seriesKey === COMPLIANCE_SERIES.HONORS) return "#22c55e";
   if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) return "#1B7EB5";
+  // "None" intentionally shares Null Sites' color.
+  if (seriesKey === COMPLIANCE_SERIES.NONE) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
   if (seriesKey === SPECIAL_SERIES.NULL_SITES) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
   const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
   const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
@@ -488,6 +493,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       { key: COMPLIANCE_SERIES.DOES_NOT_HONOR, label: COMPLIANCE_SERIES.DOES_NOT_HONOR, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.DOES_NOT_HONOR] },
       { key: COMPLIANCE_SERIES.HONORS, label: COMPLIANCE_SERIES.HONORS, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.HONORS] },
       { key: COMPLIANCE_SERIES.NA_INVALID, label: COMPLIANCE_SERIES.NA_INVALID, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NA_INVALID] },
+      { key: COMPLIANCE_SERIES.NONE, label: COMPLIANCE_SERIES.NONE, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NONE] },
       { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
     ];
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
@@ -601,6 +607,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR ||
         seriesKey === COMPLIANCE_SERIES.HONORS ||
         seriesKey === COMPLIANCE_SERIES.NA_INVALID ||
+        seriesKey === COMPLIANCE_SERIES.NONE ||
         seriesKey === SPECIAL_SERIES.NULL_SITES;
 
       const schemaFamily = !isComplianceOrNull ? parseSchemaToken(seriesKey)?.family : null;
@@ -625,6 +632,10 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) {
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.NA_INVALID).length;
+        }
+        if (seriesKey === COMPLIANCE_SERIES.NONE) {
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.NONE).length;
         }
 
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;

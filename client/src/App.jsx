@@ -617,6 +617,7 @@ function App() {
         if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
         if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
+        if (seriesKey === "None") return schema?.complianceResult === "None";
         if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.["Site Is Null"] ?? row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
         return schema?.tokens?.includes(seriesKey);
       };

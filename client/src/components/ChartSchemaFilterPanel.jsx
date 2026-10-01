@@ -7,8 +7,24 @@ const SPECIAL_KEYS = new Set([
   "Likely Does Not Honor GPC",
   "Likely Honors GPC",
   "Not Applicable/Invalid/Missing",
+  "None",
   "Null Sites",
 ]);
+
+const COMPLIANCE_SECTION_DESCRIPTION =
+  "Overall GPC compliance outcome for each site, plus sites that could not be analyzed.";
+const PRIVACY_SECTION_DESCRIPTION =
+  "Individual opt-out signals (USPS, OptanonConsent, Well-known, GPP) that feed into the compliance results above.";
+
+const SECTION_TITLE_STYLE = {
+  margin: "0 0 8px",
+  cursor: "help",
+  fontSize: "0.8rem",
+  fontWeight: 700,
+  letterSpacing: "0.04em",
+  textTransform: "uppercase",
+};
+
 
 const SPECIAL_DESCRIPTIONS = {
   "Likely Does Not Honor GPC":
@@ -17,6 +33,8 @@ const SPECIAL_DESCRIPTIONS = {
     "At least one privacy string has 'Opted Out' and none have 'Did Not Opt Out' (including the Well-known endpoint).",
   "Not Applicable/Invalid/Missing":
     "No privacy string shows a clear opt-out or refusal — strings are null, invalid, missing, or not applicable.",
+  "None":
+    "Sites whose compliance result is recorded as None.",
   "Null Sites":
     "Sites the crawler could not reach or evaluate. Excluded from compliance analysis.",
 };
@@ -97,6 +115,9 @@ export default function ChartSchemaFilterPanel({
 
       {specialOptions.length > 0 && (
         <div className="csfp__specials-section" style={{ padding: "8px 0 12px" }}>
+          <Tooltip content={COMPLIANCE_SECTION_DESCRIPTION} position="top">
+            <h4 style={SECTION_TITLE_STYLE}>Compliance Results / Null</h4>
+          </Tooltip>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
             {specialOptions.map((opt) => {
               const active = selectedSet.has(opt.key);
@@ -108,6 +129,7 @@ export default function ChartSchemaFilterPanel({
               if (opt.key === "Likely Does Not Honor GPC") { icon = "❌"; }
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
               if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; iconColor = "#1B7EB5"; }
+              if (opt.key === "None") { icon = "⊘"; }
               if (opt.key === "Null Sites") { icon = "∅"; label = "Null Sites"; }
 
               return (
@@ -144,6 +166,9 @@ export default function ChartSchemaFilterPanel({
       )}
 
       <div className="csfp__schema-panel" style={{ width: "100%" }}>
+        <Tooltip content={PRIVACY_SECTION_DESCRIPTION} position="top">
+          <h4 style={SECTION_TITLE_STYLE}>Privacy Signals</h4>
+        </Tooltip>
         <SchemaFilterPanel
           schemaFilterMeta={schemaFilterMeta}
           selectedSchemaTokens={selectedSchemaTokens}
