@@ -8,11 +8,10 @@ const SPECIAL_KEYS = new Set([
   "Likely Honors GPC",
   "Not Applicable/Invalid/Missing",
   "None",
-  "Null Sites",
 ]);
 
 const COMPLIANCE_SECTION_DESCRIPTION =
-  "Overall GPC compliance outcome for each site, plus sites that could not be analyzed.";
+  "Overall GPC compliance outcome for each site, including sites with no result (None).";
 const PRIVACY_SECTION_DESCRIPTION =
   "Individual opt-out signals (USPS, OptanonConsent, Well-known, GPP) that feed into the compliance results above.";
 
@@ -35,8 +34,6 @@ const SPECIAL_DESCRIPTIONS = {
     "No privacy string shows a clear opt-out or refusal — strings are null, invalid, missing, or not applicable.",
   "None":
     "Sites whose compliance result is recorded as None.",
-  "Null Sites":
-    "Sites the crawler could not reach or evaluate. Excluded from compliance analysis.",
 };
 
 function PowerToggle({ on, onClick, label }) {
@@ -130,7 +127,6 @@ export default function ChartSchemaFilterPanel({
               if (opt.key === "Likely Honors GPC") { icon = "✅"; }
               if (opt.key === "Not Applicable/Invalid/Missing") { icon = "➖"; iconColor = "#1B7EB5"; }
               if (opt.key === "None") { icon = "⊘"; }
-              if (opt.key === "Null Sites") { icon = "∅"; label = "Null Sites"; }
 
               return (
                 <div

@@ -65,7 +65,6 @@ import {
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
 } from "./utils/schemaClassification.js";
-import { SPECIAL_SERIES } from "./utils/colorPalettes.js";
 import datasetsManifest from "./generated/datasets.json";
 
 const PAGE_SIZE = 10;
@@ -618,7 +617,6 @@ function App() {
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
         if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
         if (seriesKey === "None") return schema?.complianceResult === "None";
-        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.["Site Is Null"] ?? row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
         return schema?.tokens?.includes(seriesKey);
       };
       base = base.filter((record) =>

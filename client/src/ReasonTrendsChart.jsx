@@ -50,11 +50,6 @@ const COMPLIANCE_DESCRIPTIONS = {
   [COMPLIANCE_SERIES.NONE]: "Sites whose compliance result is recorded as None.",
 };
 
-const SPECIAL_SERIES_DESCRIPTIONS = {
-  [SPECIAL_SERIES.NULL_SITES]:
-    "Counts rows where site_isnull is TRUE in the main dataset for each month.",
-};
-
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
 
 const MUTUALLY_EXCLUSIVE_SERIES = new Set([
@@ -62,7 +57,6 @@ const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   COMPLIANCE_SERIES.HONORS,
   COMPLIANCE_SERIES.NA_INVALID,
   COMPLIANCE_SERIES.NONE,
-  SPECIAL_SERIES.NULL_SITES,
 ]);
 
 // Point shape identifies which family a line belongs to, so color can stay
@@ -206,9 +200,8 @@ function baseColorForSeries(seriesKey) {
   if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) return "#ef4444";
   if (seriesKey === COMPLIANCE_SERIES.HONORS) return "#22c55e";
   if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) return "#1B7EB5";
-  // "None" intentionally shares Null Sites' color.
+  // "None" uses the gray previously assigned to Null Sites.
   if (seriesKey === COMPLIANCE_SERIES.NONE) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
-  if (seriesKey === SPECIAL_SERIES.NULL_SITES) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
   const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
   const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
   return palette[0];
@@ -279,7 +272,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   setExpandedCategories,
 }) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
-  const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
   const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -435,7 +427,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 return {
                   key: periodEntry.key,
                   allRecords: data?.allRecords || [],
-                  nullRows: data?.nullRows || [],
                   hasSchemaColumn: Boolean(data?.hasSchemaColumn),
                 };
               })
@@ -445,17 +436,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         );
 
         if (cancelled) return;
-        const nextAll = {}; const nextNull = {}; const nextAvail = {};
+        const nextAll = {}; const nextAvail = {};
         perStateResults.forEach(({ stateCode, monthResults }) => {
-          nextAll[stateCode] = {}; nextNull[stateCode] = {}; nextAvail[stateCode] = {};
+          nextAll[stateCode] = {}; nextAvail[stateCode] = {};
           monthResults.forEach(m => {
             nextAll[stateCode][m.key] = m.allRecords;
-            nextNull[stateCode][m.key] = m.nullRows;
             nextAvail[stateCode][m.key] = m.hasSchemaColumn;
           });
         });
         setStateMonthToAllRecords(nextAll);
-        setStateMonthToNullRows(nextNull);
         setStateMonthToSchemaAvailability(nextAvail);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -494,7 +483,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       { key: COMPLIANCE_SERIES.HONORS, label: COMPLIANCE_SERIES.HONORS, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.HONORS] },
       { key: COMPLIANCE_SERIES.NA_INVALID, label: COMPLIANCE_SERIES.NA_INVALID, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NA_INVALID] },
       { key: COMPLIANCE_SERIES.NONE, label: COMPLIANCE_SERIES.NONE, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NONE] },
-      { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
     ];
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
   }, [schemaSeriesMeta]);
@@ -607,8 +595,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR ||
         seriesKey === COMPLIANCE_SERIES.HONORS ||
         seriesKey === COMPLIANCE_SERIES.NA_INVALID ||
-        seriesKey === COMPLIANCE_SERIES.NONE ||
-        seriesKey === SPECIAL_SERIES.NULL_SITES;
+        seriesKey === COMPLIANCE_SERIES.NONE;
 
       const schemaFamily = !isComplianceOrNull ? parseSchemaToken(seriesKey)?.family : null;
       let pointStyle = isComplianceOrNull ? "circle" : (POINT_STYLE_BY_FAMILY[schemaFamily] ?? "circle");
@@ -638,7 +625,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.NONE).length;
         }
 
-        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;
         if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
         return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
       });
@@ -677,7 +663,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       });
     }));
     return allDatasets;
-  }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
+  }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
 
     // Re-skins baseDatasets for the currently hovered legend item — computed
     // as plain derived state (not by mutating the Chart.js instance directly)
