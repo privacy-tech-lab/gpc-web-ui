@@ -301,7 +301,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       activeSchemaFamilies.length === 1
         ? activeSchemaFamilies[0]
         : activeSchemaFamilies.slice(0, -1).join(", ") + " and " + activeSchemaFamilies.at(-1);
-    return `* Percentages for ${list} series are out of sites with a non-None value for that variable, not total sites.`;
+    return `* Percentages for ${list} series are out of sites with some data for that variable, not total sites.`;
   }, [activeSchemaFamilies]);
 
   useEffect(() => {
