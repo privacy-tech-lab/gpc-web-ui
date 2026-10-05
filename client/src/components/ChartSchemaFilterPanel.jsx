@@ -113,7 +113,7 @@ export default function ChartSchemaFilterPanel({
       {specialOptions.length > 0 && (
         <div className="csfp__specials-section" style={{ padding: "8px 0 12px" }}>
           <Tooltip content={COMPLIANCE_SECTION_DESCRIPTION} position="top">
-            <h4 style={SECTION_TITLE_STYLE}>Compliance Results / Null</h4>
+            <h4 style={SECTION_TITLE_STYLE}>Compliance Results</h4>
           </Tooltip>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
             {specialOptions.map((opt) => {
