@@ -24,6 +24,305 @@ import { STATUS_COLOR_PALETTES, LEGACY_COLOR_PALETTE, SPECIAL_SERIES, getColorFo
 import { loadDataset } from "./utils/datasetCache.js";
 import datasetsManifest from "./generated/datasets.json";
 
+// ---------------------------------------------------------------------------
+// Data-label helpers (shared by the datalabels options and the axis-clearance
+// plugin below so they always agree on which labels exist and how wide they
+// are).
+// ---------------------------------------------------------------------------
+const LABEL_FONT_SIZE = 10;
+const LABEL_PAD_X = 2; // tight: just enough white behind the text
+const LABEL_PAD_Y = 3;
+const LABEL_OFFSET = 8; // gap between a point and its label
+const LABEL_BOX_HEIGHT = Math.round(LABEL_FONT_SIZE * 1.2) + LABEL_PAD_Y * 2;
+// Two points closer than this (in pixels) would have overlapping labels, or a
+// label sitting on top of the neighbouring point, if both labels went above.
+const LABEL_COLLISION_PX = LABEL_BOX_HEIGHT + LABEL_OFFSET;
+
+function dataLabelText(dataset, dataIndex, mode) {
+  const val = dataset?.data?.[dataIndex];
+  if (!val || val <= 0) return "";
+  if (mode === "counts") return val.toLocaleString();
+  if (mode === "percentages") {
+    const denom = dataset._denominators?.[dataIndex];
+    if (!denom) return "";
+    return ((val / denom) * 100).toFixed(1) + "%";
+  }
+  return "";
+}
+
+// The legend-hover isolate effect fades other lines by appending an alpha
+// suffix to their color (making it longer than "#rrggbb"); their labels are
+// hidden, so they must not take part in collision/clearance math either.
+function isDatasetFaded(dataset) {
+  return typeof dataset?.borderColor === "string" && dataset.borderColor.length > 7;
+}
+
+// ---------------------------------------------------------------------------
+// Label placement (line charts). A small greedy solver picks, for every label,
+// either directly above or directly below its point, whichever avoids other
+// labels, other lines' markers and, where possible, other lines. Labels never
+// move further away than the normal offset, so each one stays obviously tied
+// to its own point (three or more lines stacked on top of each other can
+// still overlap; that's intentional). It runs once per layout inside the
+// plugin below and the datalabels options just look the answer up.
+// ---------------------------------------------------------------------------
+const LABEL_EDGE_GAP = 3; // keep labels this far from the x-axis / canvas top
+const LABEL_MARKER_HALF = 6; // marker radius (5) + 1px breathing room
+
+function overlapArea(a, b) {
+  const w = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
+  const h = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+// Liang–Barsky: does the segment touch the rectangle?
+function segmentHitsRect(s, r) {
+  let t0 = 0, t1 = 1;
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [s.x1 - r.x1, r.x2 - s.x1, s.y1 - r.y1, r.y2 - s.y1];
+  for (let k = 0; k < 4; k++) {
+    if (p[k] === 0) { if (q[k] < 0) return false; continue; }
+    const t = q[k] / p[k];
+    if (p[k] < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+
+function setLabelFont(chart) {
+  const family = chart.options.font?.family ?? ChartJS.defaults.font.family;
+  chart.ctx.font = `bold ${LABEL_FONT_SIZE}px ${family}`;
+}
+
+// Works out every label's position given the scales' current pixel mapping.
+// Returns { placements: Map("datasetIndex:dataIndex" -> {align, offset}),
+//           rects: [{x1,y1,x2,y2}] } (rects in canvas pixels).
+function computeLabelLayout(chart, mode) {
+  const x = chart.scales.x, y = chart.scales.y;
+  const n = chart.data.labels?.length || 0;
+  const ctx = chart.ctx;
+  ctx.save();
+  setLabelFont(chart);
+
+  const series = [];
+  const points = [];
+  chart.data.datasets.forEach((ds, di) => {
+    if (!chart.isDatasetVisible(di) || isDatasetFaded(ds)) return;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const v = ds.data?.[i];
+      if (v == null || Number.isNaN(v)) continue;
+      const pt = { di, i, px: x.getPixelForValue(i), py: y.getPixelForValue(v), text: dataLabelText(ds, i, mode) };
+      pts.push(pt);
+      points.push(pt);
+    }
+    series.push({ di, pts });
+  });
+
+  const segments = [];
+  series.forEach(({ di, pts }) => {
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k];
+      segments.push({ di, x1: a.px, y1: a.py, x2: b.px, y2: b.py, minX: Math.min(a.px, b.px), maxX: Math.max(a.px, b.px) });
+    }
+  });
+
+  const labeled = points.filter((pt) => pt.text);
+  const byMonth = new Map();
+  labeled.forEach((pt) => {
+    pt.w = ctx.measureText(pt.text).width + LABEL_PAD_X * 2;
+    if (!byMonth.has(pt.i)) byMonth.set(pt.i, []);
+    byMonth.get(pt.i).push(pt);
+  });
+
+  const placements = new Map();
+  const placed = [];
+  const H = LABEL_BOX_HEIGHT;
+  const rectFor = (pt, bottom) => ({
+    x1: pt.px - pt.w / 2,
+    x2: pt.px + pt.w / 2,
+    y1: bottom ? pt.py + LABEL_OFFSET : pt.py - LABEL_OFFSET - H,
+    y2: bottom ? pt.py + LABEL_OFFSET + H : pt.py - LABEL_OFFSET,
+  });
+  const centerY = (r) => (r.y1 + r.y2) / 2;
+
+  // Months are solved left to right; within a month every label's side is
+  // chosen together, so the lines' labels can't contradict each other.
+  [...byMonth.keys()].sort((m1, m2) => m1 - m2).forEach((month) => {
+    // Top of the chart first; ties broken by dataset order.
+    const group = byMonth.get(month).sort((p1, p2) => p1.py - p2.py || p1.di - p2.di);
+    const m = group.length;
+
+    // Cost of each label on its own (above = 0, below = 1) against markers,
+    // other lines, and labels already placed in earlier months.
+    const rects = group.map((pt) => [rectFor(pt, false), rectFor(pt, true)]);
+    const base = group.map((pt, k) => [0, 1].map((side) => {
+      const rect = rects[k][side];
+      let cost = side; // prefer above when all else is equal
+      for (const other of placed) {
+        if (other.x2 <= rect.x1 || other.x1 >= rect.x2) continue;
+        const area = overlapArea(rect, other);
+        if (area) cost += 1000 + area;
+      }
+      for (const mk of points) {
+        if (mk === pt || Math.abs(mk.px - pt.px) > pt.w / 2 + LABEL_MARKER_HALF) continue;
+        const mr = { x1: mk.px - LABEL_MARKER_HALF, x2: mk.px + LABEL_MARKER_HALF, y1: mk.py - LABEL_MARKER_HALF, y2: mk.py + LABEL_MARKER_HALF };
+        if (overlapArea(rect, mr)) cost += 300;
+      }
+      for (const sg of segments) {
+        if (sg.di === pt.di || sg.maxX < rect.x1 || sg.minX > rect.x2) continue;
+        if (segmentHitsRect(sg, rect)) cost += 6;
+      }
+      return cost;
+    }));
+
+    // Cost of each pair of labels in this month: overlapping boxes, and --
+    // much worse -- reading order flipping, i.e. a lower point's label ending
+    // up above a higher point's label (e.g. the higher one pushed below its
+    // point while the lower one stays above its own).
+    const pair = [];
+    for (let k = 0; k < m; k++) {
+      pair[k] = [];
+      for (let l = k + 1; l < m; l++) {
+        pair[k][l] = [0, 1].map((sk) => [0, 1].map((sl) => {
+          let cost = 0;
+          const area = overlapArea(rects[k][sk], rects[l][sl]);
+          if (area) cost += 1000 + area;
+          if (group[l].py - group[k].py > 0.5 && centerY(rects[k][sk]) > centerY(rects[l][sl])) cost += 5000;
+          return cost;
+        }));
+      }
+    }
+    const costOf = (sides, limit) => {
+      let cost = 0;
+      for (let k = 0; k < m; k++) {
+        cost += base[k][sides[k]];
+        for (let l = k + 1; l < m; l++) cost += pair[k][l][sides[k]][sides[l]];
+        if (cost >= limit) return cost;
+      }
+      return cost;
+    };
+
+    // Try every above/below combination for the month (or, for an unusually
+    // crowded month, just "top N above, the rest below").
+    let bestSides = null, bestCost = Infinity;
+    const consider = (sides) => {
+      const c = costOf(sides, bestCost);
+      if (c < bestCost) { bestCost = c; bestSides = sides.slice(); }
+    };
+    if (m <= 12) {
+      const sides = new Array(m).fill(0);
+      for (let mask = 0; mask < 1 << m; mask++) {
+        for (let k = 0; k < m; k++) sides[k] = (mask >> k) & 1;
+        consider(sides);
+      }
+    } else {
+      for (let split = m; split >= 0; split--) {
+        consider(group.map((_, k) => (k < split ? 0 : 1)));
+      }
+    }
+
+    group.forEach((pt, k) => {
+      const side = bestSides[k];
+      placed.push(rects[k][side]);
+      placements.set(`${pt.di}:${pt.i}`, { align: side ? "bottom" : "top", offset: LABEL_OFFSET });
+    });
+  });
+
+  ctx.restore();
+  return { placements, rects: placed };
+}
+
+// Reads the solver's answer for one label (falls back to "above").
+function getLabelPlacement(ctx) {
+  return (
+    ctx.chart.$labelPlacement?.get(`${ctx.datasetIndex}:${ctx.dataIndex}`) ||
+    { align: "top", offset: LABEL_OFFSET }
+  );
+}
+
+// Extra room on the left needed so no label covers the y-axis: line charts
+// put the first month's point right on the axis and labels are centered on
+// their point. Returns 0 when nothing would be covered.
+function computeLeftShift(chart, mode, gap) {
+  const x = chart.scales.x;
+  const n = chart.data.labels?.length || 0;
+  const length = x.right - x.left;
+  const ctx = chart.ctx;
+  ctx.save();
+  setLabelFont(chart);
+  const last = Math.max(n - 1, 1);
+  let shift = 0;
+  chart.data.datasets.forEach((ds, di) => {
+    if (!chart.isDatasetVisible(di) || isDatasetFaded(ds)) return;
+    for (let i = 0; i < n; i++) {
+      const frac = i / last;
+      if (frac >= 1) continue;
+      const text = dataLabelText(ds, i, mode);
+      if (!text) continue;
+      const half = ctx.measureText(text).width / 2 + LABEL_PAD_X;
+      // Point i sits at d*(1-frac) + frac*length once shifted right by d.
+      const need = (half + gap - frac * length) / (1 - frac);
+      if (need > shift) shift = need;
+      if (frac * length > half + gap) break; // later points are clear
+    }
+  });
+  ctx.restore();
+  return Math.min(Math.max(shift, 0), length * 0.25);
+}
+
+// Line charts with labels on:
+//  - nudges the plot right so no label covers the y-axis,
+//  - nudges the plot up / down so labels pushed below a low point don't cover
+//    the x-axis (or run off the top of the canvas),
+//  - then lets computeLabelLayout decide above/below for every label.
+// Shifts are always written as absolute values from the scale's own box, so
+// repeated layouts never accumulate.
+const labelAxisClearancePlugin = {
+  id: "labelAxisClearance",
+  defaults: { enabled: false, mode: "off", gap: 4 },
+  afterLayout(chart, _args, opts) {
+    const x = chart.scales?.x, y = chart.scales?.y;
+    if (!x || !y || !x.isHorizontal() || y.isHorizontal()) return;
+
+    const setX = (shift) => { x._startPixel = x.left + shift; x._length = x.right - x.left - shift; };
+    const setY = (top, bottom) => { y._startPixel = y.top + top; y._length = y.bottom - y.top - top - bottom; };
+
+    const active = Boolean(opts?.enabled) && opts.mode !== "off" && !x.options.offset;
+    if (!active) {
+      chart.$labelPlacement = null;
+      if (chart.$labelShifted) { setX(0); setY(0, 0); chart.$labelShifted = false; }
+      return;
+    }
+    chart.$labelShifted = true;
+    const mode = opts.mode;
+
+    setX(computeLeftShift(chart, mode, opts.gap));
+
+    const maxV = (y.bottom - y.top) * 0.3;
+    let top = 0, bottom = 0, layout = null, settled = false;
+    for (let iter = 0; iter < 6 && !settled; iter++) {
+      setY(top, bottom);
+      layout = computeLabelLayout(chart, mode);
+      let overBottom = -Infinity, overTop = -Infinity;
+      layout.rects.forEach((r) => {
+        overBottom = Math.max(overBottom, r.y2 - (y.bottom - LABEL_EDGE_GAP));
+        overTop = Math.max(overTop, LABEL_EDGE_GAP - r.y1);
+      });
+      const nextBottom = layout.rects.length ? Math.min(maxV, Math.max(0, bottom + overBottom)) : 0;
+      const nextTop = layout.rects.length ? Math.min(maxV, Math.max(0, top + overTop)) : 0;
+      settled = Math.abs(nextBottom - bottom) < 0.5 && Math.abs(nextTop - top) < 0.5;
+      if (!settled) { bottom = nextBottom; top = nextTop; }
+    }
+    if (!settled) {
+      setY(top, bottom);
+      layout = computeLabelLayout(chart, mode);
+    }
+    chart.$labelPlacement = layout.placements;
+  },
+};
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -33,24 +332,22 @@ ChartJS.register(
   Title,
   Legend,
   ChartTooltip,
-  ChartDataLabels
+  ChartDataLabels,
+  labelAxisClearancePlugin
 );
 
 const COMPLIANCE_SERIES = {
   DOES_NOT_HONOR: "Likely Does Not Honor GPC",
   HONORS: "Likely Honors GPC",
   NA_INVALID: "Not Applicable/Invalid/Missing",
+  NONE: "None",
 };
 
 const COMPLIANCE_DESCRIPTIONS = {
   [COMPLIANCE_SERIES.DOES_NOT_HONOR]: "Sites whose compliance classification explicitly states that they likely do not honor GPC.",
   [COMPLIANCE_SERIES.HONORS]: "Sites whose compliance classification explicitly states that they likely honor GPC.",
   [COMPLIANCE_SERIES.NA_INVALID]: "Sites where GPC compliance could not be determined or is not applicable.",
-};
-
-const SPECIAL_SERIES_DESCRIPTIONS = {
-  [SPECIAL_SERIES.NULL_SITES]:
-    "Counts rows where site_isnull is TRUE in the main dataset for each month.",
+  [COMPLIANCE_SERIES.NONE]: "Sites whose compliance result is recorded as None.",
 };
 
 const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
@@ -59,7 +356,7 @@ const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   COMPLIANCE_SERIES.DOES_NOT_HONOR,
   COMPLIANCE_SERIES.HONORS,
   COMPLIANCE_SERIES.NA_INVALID,
-  SPECIAL_SERIES.NULL_SITES,
+  COMPLIANCE_SERIES.NONE,
 ]);
 
 // Point shape identifies which family a line belongs to, so color can stay
@@ -203,7 +500,8 @@ function baseColorForSeries(seriesKey) {
   if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) return "#ef4444";
   if (seriesKey === COMPLIANCE_SERIES.HONORS) return "#22c55e";
   if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) return "#1B7EB5";
-  if (seriesKey === SPECIAL_SERIES.NULL_SITES) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
+  // "None" uses the gray previously assigned to Null Sites.
+  if (seriesKey === COMPLIANCE_SERIES.NONE) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
   const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
   const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
   return palette[0];
@@ -274,7 +572,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   setExpandedCategories,
 }) {
   const [stateMonthToAllRecords, setStateMonthToAllRecords] = useState({});
-  const [stateMonthToNullRows, setStateMonthToNullRows] = useState({});
   const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -304,7 +601,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       activeSchemaFamilies.length === 1
         ? activeSchemaFamilies[0]
         : activeSchemaFamilies.slice(0, -1).join(", ") + " and " + activeSchemaFamilies.at(-1);
-    return `* Percentages for ${list} series are out of sites with a non-None value for that variable, not total sites.`;
+    return `* Percentages for ${list} series are out of sites with some data for that variable, not total sites.`;
   }, [activeSchemaFamilies]);
 
   useEffect(() => {
@@ -430,7 +727,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                 return {
                   key: periodEntry.key,
                   allRecords: data?.allRecords || [],
-                  nullRows: data?.nullRows || [],
                   hasSchemaColumn: Boolean(data?.hasSchemaColumn),
                 };
               })
@@ -440,17 +736,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         );
 
         if (cancelled) return;
-        const nextAll = {}; const nextNull = {}; const nextAvail = {};
+        const nextAll = {}; const nextAvail = {};
         perStateResults.forEach(({ stateCode, monthResults }) => {
-          nextAll[stateCode] = {}; nextNull[stateCode] = {}; nextAvail[stateCode] = {};
+          nextAll[stateCode] = {}; nextAvail[stateCode] = {};
           monthResults.forEach(m => {
             nextAll[stateCode][m.key] = m.allRecords;
-            nextNull[stateCode][m.key] = m.nullRows;
             nextAvail[stateCode][m.key] = m.hasSchemaColumn;
           });
         });
         setStateMonthToAllRecords(nextAll);
-        setStateMonthToNullRows(nextNull);
         setStateMonthToSchemaAvailability(nextAvail);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -488,7 +782,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       { key: COMPLIANCE_SERIES.DOES_NOT_HONOR, label: COMPLIANCE_SERIES.DOES_NOT_HONOR, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.DOES_NOT_HONOR] },
       { key: COMPLIANCE_SERIES.HONORS, label: COMPLIANCE_SERIES.HONORS, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.HONORS] },
       { key: COMPLIANCE_SERIES.NA_INVALID, label: COMPLIANCE_SERIES.NA_INVALID, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NA_INVALID] },
-      { key: SPECIAL_SERIES.NULL_SITES, label: SPECIAL_SERIES.NULL_SITES, description: SPECIAL_SERIES_DESCRIPTIONS[SPECIAL_SERIES.NULL_SITES] },
+      { key: COMPLIANCE_SERIES.NONE, label: COMPLIANCE_SERIES.NONE, description: COMPLIANCE_DESCRIPTIONS[COMPLIANCE_SERIES.NONE] },
     ];
     return [...baseSchema, ...schemaSeriesMeta.tokens.map(t => ({ key: t, label: schemaSeriesMeta.labelsByToken[t] || t, description: schemaSeriesMeta.descriptionsByToken[t] || "" }))];
   }, [schemaSeriesMeta]);
@@ -601,7 +895,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR ||
         seriesKey === COMPLIANCE_SERIES.HONORS ||
         seriesKey === COMPLIANCE_SERIES.NA_INVALID ||
-        seriesKey === SPECIAL_SERIES.NULL_SITES;
+        seriesKey === COMPLIANCE_SERIES.NONE;
 
       const schemaFamily = !isComplianceOrNull ? parseSchemaToken(seriesKey)?.family : null;
       let pointStyle = isComplianceOrNull ? "circle" : (POINT_STYLE_BY_FAMILY[schemaFamily] ?? "circle");
@@ -626,8 +920,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
           return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.NA_INVALID).length;
         }
+        if (seriesKey === COMPLIANCE_SERIES.NONE) {
+          if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
+          return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema?.complianceResult === COMPLIANCE_SERIES.NONE).length;
+        }
 
-        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return stateMonthToNullRows[stateCode]?.[m]?.length;
         if (!stateMonthToSchemaAvailability[stateCode]?.[m]) return null;
         return (stateMonthToAllRecords[stateCode]?.[m] || []).filter(r => r.schema.tokens.includes(seriesKey)).length;
       });
@@ -666,7 +963,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       });
     }));
     return allDatasets;
-  }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToNullRows, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
+  }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
 
     // Re-skins baseDatasets for the currently hovered legend item — computed
     // as plain derived state (not by mutating the Chart.js instance directly)
@@ -730,21 +1027,20 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
           }
           return "#0f172a";
         },
-        font: { weight: "bold", size: 10 },
-        formatter: (val, ctx) => {
-          if (!val || val <= 0) return "";
-          if (showDataLabels === "counts") return val.toLocaleString();
-          if (showDataLabels === "percentages") {
-            const denom = ctx.dataset._denominators?.[ctx.dataIndex];
-            if (!denom) return "";
-            return ((val / denom) * 100).toFixed(1) + "%";
-          }
-          return "";
-        },
-        padding: 4,
-        offset: 8,
+        font: { weight: "bold", size: LABEL_FONT_SIZE },
+        formatter: (val, ctx) => dataLabelText(ctx.dataset, ctx.dataIndex, showDataLabels),
+        // Tight box: hugs the text instead of leaving wide margins at the sides.
+        padding: { top: LABEL_PAD_Y, bottom: LABEL_PAD_Y, left: LABEL_PAD_X, right: LABEL_PAD_X },
         anchor: "end",
-        align: "top",
+        // Above/below + distance come from the placement solver (see
+        // labelAxisClearancePlugin): close lines get split above/below so no
+        // two labels overlap.
+        align: (ctx) => getLabelPlacement(ctx).align,
+        offset: (ctx) => getLabelPlacement(ctx).offset,
+      },
+      labelAxisClearance: {
+        enabled: chartType === "line" && showDataLabels !== "off",
+        mode: showDataLabels,
       },
       legend: {
         position: "bottom",
