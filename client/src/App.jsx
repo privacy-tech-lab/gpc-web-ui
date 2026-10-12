@@ -65,7 +65,6 @@ import {
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
 } from "./utils/schemaClassification.js";
-import { SPECIAL_SERIES } from "./utils/colorPalettes.js";
 import datasetsManifest from "./generated/datasets.json";
 
 const PAGE_SIZE = 10;
@@ -246,6 +245,8 @@ function App() {
   );
   const [chartType, setChartType] = useState(() => getParam(["ctype"], "line"));
   const [expandedFilterCategories, setExpandedFilterCategories] = useState({});
+  // { column, direction: "asc" | "desc" } or null for the dataset's original order.
+  const [sortConfig, setSortConfig] = useState(null);
 
   useEffect(() => {
     preloadAllDatasets();
@@ -617,7 +618,7 @@ function App() {
         if (seriesKey === "Likely Does Not Honor GPC") return schema?.complianceResult === "Likely Does Not Honor GPC";
         if (seriesKey === "Likely Honors GPC") return schema?.complianceResult === "Likely Honors GPC";
         if (seriesKey === "Not Applicable/Invalid/Missing") return schema?.complianceResult === "Not Applicable/Invalid/Missing";
-        if (seriesKey === SPECIAL_SERIES.NULL_SITES) return String(row?.["Site Is Null"] ?? row?.site_isnull ?? "").trim().toUpperCase() === "TRUE";
+        if (seriesKey === "None") return schema?.complianceResult === "None";
         return schema?.tokens?.includes(seriesKey);
       };
       base = base.filter((record) =>
@@ -629,8 +630,49 @@ function App() {
     if (query.length > 0) {
       base = base.filter(({ row }) => getRowSearchValue(row).includes(query));
     }
+
+    if (sortConfig?.column) {
+      const { column, direction } = sortConfig;
+      const dir = direction === "desc" ? -1 : 1;
+      const getValue = (record) => {
+        const v = column === "Compliance Result"
+          ? record.schema?.complianceResult
+          : record.row?.[column];
+        if (v == null) return "";
+        return typeof v === "object" ? JSON.stringify(v) : String(v).trim();
+      };
+      const toNumber = (v) => (v !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+
+      // Decorate once so each row's value is computed a single time, and keep the
+      // original index so ties stay in their original order (stable in both directions).
+      base = base
+        .map((record, index) => ({ record, index, value: getValue(record) }))
+        .sort((a, b) => {
+          // Empty values always sink to the bottom, whichever direction is active.
+          if (a.value === "" && b.value === "") return a.index - b.index;
+          if (a.value === "") return 1;
+          if (b.value === "") return -1;
+
+          const an = toNumber(a.value);
+          const bn = toNumber(b.value);
+          const cmp = an !== null && bn !== null
+            ? an - bn
+            : a.value.localeCompare(b.value, undefined, { numeric: true, sensitivity: "base" });
+          return cmp !== 0 ? cmp * dir : a.index - b.index;
+        })
+        .map(({ record }) => record);
+    }
     return base;
-  }, [rowRecords, schemaModeUnavailable, searchQuery, tableSelectedSeries]);
+  }, [rowRecords, schemaModeUnavailable, searchQuery, tableSelectedSeries, sortConfig]);
+
+  const handleSortColumn = (column) => {
+    setSortConfig((prev) =>
+      prev?.column === column
+        ? { column, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { column, direction: "asc" }
+    );
+    setCurrentPage(1);
+  };
 
   const filteredRows = useMemo(() => filteredRecords.map((record) => record.row), [filteredRecords]);
 
@@ -724,17 +766,39 @@ function App() {
                   const displayName = getColumnDisplayName(header, headerFriendlyNames);
                   const desc = getColumnDescription(header, displayName, descriptionsOfColumns);
 
+                  const sortDir = sortConfig?.column === header ? sortConfig.direction : null;
+                  const sortIndicator = sortDir ? (
+                    <span className="sort-indicator" aria-hidden="true" style={{ marginLeft: 6 }}>
+                      {sortDir === "asc" ? "▲" : "▼"}
+                    </span>
+                  ) : null;
+
                   return (
-                    <th key={header} className={header === firstStickyColumn ? "col-sticky" : undefined}>
+                    <th
+                      key={header}
+                      className={header === firstStickyColumn ? "col-sticky" : undefined}
+                      onClick={() => handleSortColumn(header)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSortColumn(header);
+                        }
+                      }}
+                      tabIndex={0}
+                      aria-sort={sortDir === "asc" ? "ascending" : sortDir === "desc" ? "descending" : "none"}
+                      title={`Sort by ${displayName}`}
+                      style={{ cursor: "pointer", userSelect: "none" }}
+                    >
                       {desc ? (
                         <div className="header-wrapper">
                           <span className="header-content">{displayName}</span>
+                          {sortIndicator}
                           <Tooltip content={desc} position="bottom">
-                            <span className="tooltip-icon">?</span>
+                            <span className="tooltip-icon" onClick={(e) => e.stopPropagation()}>?</span>
                           </Tooltip>
                         </div>
                       ) : (
-                        <span className="header-content">{displayName}</span>
+                        <span className="header-content">{displayName}{sortIndicator}</span>
                       )}
                     </th>
                   );
