@@ -12,8 +12,62 @@ import {
 import { Bar } from "react-chartjs-2";
 import ChartDataLabels from "chartjs-plugin-datalabels";
 import { parseJsonLike } from "../utils/schemaClassification.js";
+import { formatStateLabel } from "../utils/stateLabels.js";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Legend, ChartTooltip, ChartDataLabels);
+
+function CautionIcon({ size = 14 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      fill="#b45309"
+      viewBox="0 0 16 16"
+      style={{ display: "block" }}
+    >
+      <path d="M8.982 1.566a1.13 1.13 0 0 0-1.964 0L.165 13.233c-.457.778.091 1.767.982 1.767h13.706c.891 0 1.439-.99.982-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
+    </svg>
+  );
+}
+
+function NJIPNotice({ onClick }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        marginTop: "0.75rem",
+        padding: "8px 12px",
+        background: "#fffbeb",
+        border: "1px solid #fde68a",
+        borderRadius: "8px",
+        fontSize: "13px",
+        color: "#92400e",
+        cursor: "pointer",
+        width: "fit-content",
+      }}
+    >
+      <CautionIcon size={16} />
+      <span>
+        This data was collected with a NJ VPN that has a NY IP.{" "}
+        <span style={{ textDecoration: "underline", fontWeight: "600" }}>
+          Click here to learn more.
+        </span>
+      </span>
+    </div>
+  );
+}
 
 // ==============================================================================
 // 1. CONSTANTS & CONFIGURATION
@@ -40,7 +94,7 @@ const STATE_TO_SECTION_KEYS = {
   OR: ["usorv1", "usnatv1"],
   MT: ["usmtv1", "usnatv1"],
   NH: ["usnhv1", "usnatv1"],
-  NJ: ["usnjv1", "usnatv1"],
+  NJ_NY: ["usnjv1", "usnatv1"],
   TN: ["ustnv1", "usnatv1"],
   TX: ["ustxv1", "usnatv1"],
   DE: ["usdel1", "usnatv1"],
@@ -64,7 +118,7 @@ const STATUS_LABELS = {
   opted_out: "Opted Out",
   did_not_opt_out: "Did Not Opt Out",
   not_applicable: "Not Applicable",
-  invalid_missing: "Invalid / Missing", // TODO: Update framework stratgeies to use this string instead of returning []
+  invalid_missing: "Invalid or Missing", // TODO: Update framework stratgeies to use this string instead of returning []
 };
 
 
@@ -407,7 +461,7 @@ function buildSectionChartDataMulti(rows, periods, timePeriods, frameworkKey, fi
 // 5. MAIN COMPONENT CONTROLLER
 // ==============================================================================
 
-const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, stateMonths }) {
+const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, stateMonths, onNavigateToNJIssue }) {
   
   // ── 5a. UI Dynamic States & Filters ──────────────────────────────────────────
   const availableStates = Object.keys(stateMonths);
@@ -707,7 +761,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       },
       title: {
         display: true,
-        text: [`${selectedField} (${selectedState})`],
+        text: [`${selectedField} (${formatStateLabel(selectedState)})`],
         font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
         color: "#1e293b",
         padding: { bottom: 5 }, // space between title and legend
@@ -755,9 +809,26 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           </select>
 
           <label htmlFor="gs-state" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>State:</label>
-          <select id="gs-state" value={selectedState} onChange={(e) => setSelectedState(e.target.value)} style={{ padding: "4px 8px" }}>
-            {availableStates.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <div style={{ position: "relative", display: "inline-block" }}>
+            {selectedState === "NJ_NY" && (
+              <span
+                title="There is a known issue with this state's data"
+                style={{
+                  position: "absolute",
+                  top: "-6px",
+                  right: "-6px",
+                  zIndex: 1,
+                  lineHeight: 0,
+                  pointerEvents: "none",
+                }}
+              >
+                <CautionIcon />
+              </span>
+            )}
+            <select id="gs-state" value={selectedState} onChange={(e) => setSelectedState(e.target.value)} style={{ padding: "4px 8px" }}>
+              {availableStates.map((s) => <option key={s} value={s}>{formatStateLabel(s)}</option>)}
+            </select>
+          </div>
 
           <div style={{ position: "relative", display: "flex", alignItems: "center", marginLeft: "4px" }}>
             <label style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginRight: "8px" }}>Periods:</label>
@@ -848,7 +919,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       {/* Empty States Fallbacks */}
       {!loading && !loadError && !hasData && (
         <p className="muted-text">
-          No records matching <strong>{selectedField}</strong> found inside {selectedState} ({periodLabel}).
+          No records matching <strong>{selectedField}</strong> found inside {formatStateLabel(selectedState)} ({periodLabel}).
         </p>
       )}
 
@@ -867,7 +938,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
               ref={chartRef} 
               data={chartData} 
               options={chartOptions} 
-              aria-label={`Bar chart showing ${selectedField} privacy compliance before and after GPC for ${selectedState}`}
+              aria-label={`Bar chart showing ${selectedField} privacy compliance before and after GPC for ${formatStateLabel(selectedState)}`}
             />
           </div>
 
@@ -893,6 +964,8 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           </div>
         </>
       )}
+
+      {selectedState === "NJ_NY" && <NJIPNotice onClick={onNavigateToNJIssue} />}
     </div>
   );
 });

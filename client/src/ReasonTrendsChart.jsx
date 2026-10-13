@@ -22,6 +22,7 @@ import {
 } from "./utils/schemaClassification.js";
 import { STATUS_COLOR_PALETTES, LEGACY_COLOR_PALETTE, SPECIAL_SERIES, getColorForSeries } from "./utils/colorPalettes.js";
 import { loadDataset } from "./utils/datasetCache.js";
+import { formatStateLabel, crawlStateToGppState } from "./utils/stateLabels.js";
 import datasetsManifest from "./generated/datasets.json";
 
 // ---------------------------------------------------------------------------
@@ -34,8 +35,6 @@ const LABEL_PAD_X = 2; // tight: just enough white behind the text
 const LABEL_PAD_Y = 3;
 const LABEL_OFFSET = 8; // gap between a point and its label
 const LABEL_BOX_HEIGHT = Math.round(LABEL_FONT_SIZE * 1.2) + LABEL_PAD_Y * 2;
-// Two points closer than this (in pixels) would have overlapping labels, or a
-// label sitting on top of the neighbouring point, if both labels went above.
 const LABEL_COLLISION_PX = LABEL_BOX_HEIGHT + LABEL_OFFSET;
 
 function dataLabelText(dataset, dataIndex, mode) {
@@ -50,24 +49,15 @@ function dataLabelText(dataset, dataIndex, mode) {
   return "";
 }
 
-// The legend-hover isolate effect fades other lines by appending an alpha
-// suffix to their color (making it longer than "#rrggbb"); their labels are
-// hidden, so they must not take part in collision/clearance math either.
 function isDatasetFaded(dataset) {
   return typeof dataset?.borderColor === "string" && dataset.borderColor.length > 7;
 }
 
 // ---------------------------------------------------------------------------
-// Label placement (line charts). A small greedy solver picks, for every label,
-// either directly above or directly below its point, whichever avoids other
-// labels, other lines' markers and, where possible, other lines. Labels never
-// move further away than the normal offset, so each one stays obviously tied
-// to its own point (three or more lines stacked on top of each other can
-// still overlap; that's intentional). It runs once per layout inside the
-// plugin below and the datalabels options just look the answer up.
+// Label placement (line charts).
 // ---------------------------------------------------------------------------
-const LABEL_EDGE_GAP = 3; // keep labels this far from the x-axis / canvas top
-const LABEL_MARKER_HALF = 6; // marker radius (5) + 1px breathing room
+const LABEL_EDGE_GAP = 3;
+const LABEL_MARKER_HALF = 6;
 
 function overlapArea(a, b) {
   const w = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1);
@@ -75,7 +65,6 @@ function overlapArea(a, b) {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
-// Liang–Barsky: does the segment touch the rectangle?
 function segmentHitsRect(s, r) {
   let t0 = 0, t1 = 1;
   const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
@@ -95,9 +84,6 @@ function setLabelFont(chart) {
   chart.ctx.font = `bold ${LABEL_FONT_SIZE}px ${family}`;
 }
 
-// Works out every label's position given the scales' current pixel mapping.
-// Returns { placements: Map("datasetIndex:dataIndex" -> {align, offset}),
-//           rects: [{x1,y1,x2,y2}] } (rects in canvas pixels).
 function computeLabelLayout(chart, mode) {
   const x = chart.scales.x, y = chart.scales.y;
   const n = chart.data.labels?.length || 0;
@@ -147,19 +133,14 @@ function computeLabelLayout(chart, mode) {
   });
   const centerY = (r) => (r.y1 + r.y2) / 2;
 
-  // Months are solved left to right; within a month every label's side is
-  // chosen together, so the lines' labels can't contradict each other.
   [...byMonth.keys()].sort((m1, m2) => m1 - m2).forEach((month) => {
-    // Top of the chart first; ties broken by dataset order.
     const group = byMonth.get(month).sort((p1, p2) => p1.py - p2.py || p1.di - p2.di);
     const m = group.length;
 
-    // Cost of each label on its own (above = 0, below = 1) against markers,
-    // other lines, and labels already placed in earlier months.
     const rects = group.map((pt) => [rectFor(pt, false), rectFor(pt, true)]);
     const base = group.map((pt, k) => [0, 1].map((side) => {
       const rect = rects[k][side];
-      let cost = side; // prefer above when all else is equal
+      let cost = side;
       for (const other of placed) {
         if (other.x2 <= rect.x1 || other.x1 >= rect.x2) continue;
         const area = overlapArea(rect, other);
@@ -177,10 +158,6 @@ function computeLabelLayout(chart, mode) {
       return cost;
     }));
 
-    // Cost of each pair of labels in this month: overlapping boxes, and --
-    // much worse -- reading order flipping, i.e. a lower point's label ending
-    // up above a higher point's label (e.g. the higher one pushed below its
-    // point while the lower one stays above its own).
     const pair = [];
     for (let k = 0; k < m; k++) {
       pair[k] = [];
@@ -204,8 +181,6 @@ function computeLabelLayout(chart, mode) {
       return cost;
     };
 
-    // Try every above/below combination for the month (or, for an unusually
-    // crowded month, just "top N above, the rest below").
     let bestSides = null, bestCost = Infinity;
     const consider = (sides) => {
       const c = costOf(sides, bestCost);
@@ -234,7 +209,6 @@ function computeLabelLayout(chart, mode) {
   return { placements, rects: placed };
 }
 
-// Reads the solver's answer for one label (falls back to "above").
 function getLabelPlacement(ctx) {
   return (
     ctx.chart.$labelPlacement?.get(`${ctx.datasetIndex}:${ctx.dataIndex}`) ||
@@ -242,9 +216,6 @@ function getLabelPlacement(ctx) {
   );
 }
 
-// Extra room on the left needed so no label covers the y-axis: line charts
-// put the first month's point right on the axis and labels are centered on
-// their point. Returns 0 when nothing would be covered.
 function computeLeftShift(chart, mode, gap) {
   const x = chart.scales.x;
   const n = chart.data.labels?.length || 0;
@@ -262,23 +233,15 @@ function computeLeftShift(chart, mode, gap) {
       const text = dataLabelText(ds, i, mode);
       if (!text) continue;
       const half = ctx.measureText(text).width / 2 + LABEL_PAD_X;
-      // Point i sits at d*(1-frac) + frac*length once shifted right by d.
       const need = (half + gap - frac * length) / (1 - frac);
       if (need > shift) shift = need;
-      if (frac * length > half + gap) break; // later points are clear
+      if (frac * length > half + gap) break;
     }
   });
   ctx.restore();
   return Math.min(Math.max(shift, 0), length * 0.25);
 }
 
-// Line charts with labels on:
-//  - nudges the plot right so no label covers the y-axis,
-//  - nudges the plot up / down so labels pushed below a low point don't cover
-//    the x-axis (or run off the top of the canvas),
-//  - then lets computeLabelLayout decide above/below for every label.
-// Shifts are always written as absolute values from the scale's own box, so
-// repeated layouts never accumulate.
 const labelAxisClearancePlugin = {
   id: "labelAxisClearance",
   defaults: { enabled: false, mode: "off", gap: 4 },
@@ -350,7 +313,7 @@ const COMPLIANCE_DESCRIPTIONS = {
   [COMPLIANCE_SERIES.NONE]: "Sites whose compliance result is recorded as None.",
 };
 
-const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ"];
+const AVAILABLE_STATES = ["CA", "CT", "CO", "NJ_NY"];
 
 const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   COMPLIANCE_SERIES.DOES_NOT_HONOR,
@@ -359,44 +322,18 @@ const MUTUALLY_EXCLUSIVE_SERIES = new Set([
   COMPLIANCE_SERIES.NONE,
 ]);
 
-// Point shape identifies which family a line belongs to, so color can stay
-// fixed to status (opted_out green, did_not_opt_out red, etc.) even when
-// several families' lines of the same status are on the chart together.
-// GPP uses "star" for every state — Chart.js's built-in point styles don't
-// support varying the number of points, so a true 4/5/6-point star per
-// state would need custom canvas-drawn point images; skipped as overkill
-// for a "possibly" ask.
 const POINT_STYLE_BY_FAMILY = {
   usps: "triangle",
   optanonConsent: "rect",
   wellKnown: "rectRot",
-  gpp: "star", // fallback for any GPP state not covered by GPP_STATE_SHAPES below
+  gpp: "star",
 };
 
-// Rainbowize palette: ROYGBIV, extended with pink/black/gray for an 8th–10th
-// line. Cycles back to red if there are somehow more than 10 selected lines.
-// Hues chosen so no two neighbors sit closer than ~20° apart even in the
-// naturally-compressed blue/indigo/violet stretch of the spectrum (a plain
-// ROYGBIV picked by name alone tends to cluster those three); pink is kept
-// noticeably lighter than red/violet so it doesn't read as a shade of
-// either, and gray is a warm (not blue-leaning) neutral so it doesn't blend
-// into the blue/indigo/violet group.
 const RAINBOW_PALETTE = [
-  "#dc2626", // red
-  "#ea580c", // orange
-  "#ca8a04", // yellow
-  "#16a34a", // green
-  "#2563eb", // blue
-  "#3730a3", // indigo
-  "#9333ea", // violet
-  "#f472b6", // pink
-  "#000000", // black
-  "#78716c", // gray
+  "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb",
+  "#3730a3", "#9333ea", "#f472b6", "#000000", "#78716c",
 ];
 
-// GPP's own section value in the data may be the old 2-letter state code
-// ("US", "CA", ...) or the newer technical segment name ("usnat", "usca",
-// ...) depending on crawl vintage — normalize either to the segment name.
 const GPP_STATE_SECTION_NAMES = {
   US: "usnat", usnat: "usnat",
   CA: "usca", usca: "usca",
@@ -408,13 +345,7 @@ function gppStateSectionName(state) {
   return GPP_STATE_SECTION_NAMES[state] || String(state || "").toLowerCase();
 }
 
-// One invented custom shape per GPP state, drawn on an offscreen canvas at
-// dataset-build time (colored to match that line's status color, since
-// Chart.js draws a canvas/image pointStyle as-is and ignores
-// pointBackgroundColor/pointBorderColor for it). Each path is built around
-// the origin so it can be reused at any size.
 const GPP_STATE_SHAPE_DRAWERS = {
-  // usnat: shield — flat top, sides curving down to a point.
   usnat(ctx, r) {
     ctx.beginPath();
     ctx.moveTo(-r * 0.85, -r * 0.6);
@@ -425,7 +356,6 @@ const GPP_STATE_SHAPE_DRAWERS = {
     ctx.closePath();
     ctx.fill();
   },
-  // usca: pentagon.
   usca(ctx, r) {
     ctx.beginPath();
     for (let i = 0; i < 5; i++) {
@@ -438,7 +368,6 @@ const GPP_STATE_SHAPE_DRAWERS = {
     ctx.closePath();
     ctx.fill();
   },
-  // usco: plus / cross.
   usco(ctx, r) {
     const t = r * 0.42;
     ctx.beginPath();
@@ -448,15 +377,12 @@ const GPP_STATE_SHAPE_DRAWERS = {
     ctx.closePath();
     ctx.fill();
   },
-  // usct: hourglass / bowtie — a self-crossing quad fills as two triangles.
   usct(ctx, r) {
     ctx.beginPath();
     ctx.moveTo(-r, -r); ctx.lineTo(r, -r); ctx.lineTo(-r, r); ctx.lineTo(r, r);
     ctx.closePath();
     ctx.fill();
   },
-  // usnj: six-armed asterisk / snowflake — stroked, not filled, so it reads
-  // distinctly from the solid shapes above.
   usnj(ctx, r) {
     ctx.lineWidth = r * 0.32;
     ctx.lineCap = "round";
@@ -474,9 +400,6 @@ const GPP_STATE_SHAPE_DRAWERS = {
 
 const shapeCanvasCache = new Map();
 
-// Builds (and caches) a small canvas with one of the shapes above, tinted
-// to match a specific line's color — canvas point styles bake their own
-// color in, so a new one is needed per distinct color, not just per shape.
 function getGppStateShapeCanvas(sectionName, color, size) {
   const drawer = GPP_STATE_SHAPE_DRAWERS[sectionName];
   if (!drawer || typeof document === "undefined") return null;
@@ -500,16 +423,12 @@ function baseColorForSeries(seriesKey) {
   if (seriesKey === COMPLIANCE_SERIES.DOES_NOT_HONOR) return "#ef4444";
   if (seriesKey === COMPLIANCE_SERIES.HONORS) return "#22c55e";
   if (seriesKey === COMPLIANCE_SERIES.NA_INVALID) return "#1B7EB5";
-  // "None" uses the gray previously assigned to Null Sites.
   if (seriesKey === COMPLIANCE_SERIES.NONE) return getColorForSeries(SPECIAL_SERIES.NULL_SITES);
   const statusKey = parseSchemaToken(seriesKey)?.status ?? "__legacy";
   const palette = STATUS_COLOR_PALETTES[statusKey] ?? LEGACY_COLOR_PALETTE;
   return palette[0];
 }
 
-// Each entry: prefixes a series key may start with -> display label for the footnote.
-// Uses the same prefix logic as isStateSensitiveSeries in App.jsx so all four families
-// are detected reliably, regardless of what parseSchemaToken returns internally.
 const SCHEMA_FAMILY_MATCHERS = [
   { prefixes: ["usps"],                                       label: "USPS" },
   { prefixes: ["optanonconsent", "optanon"],                  label: "OptanonConsent" },
@@ -518,22 +437,15 @@ const SCHEMA_FAMILY_MATCHERS = [
 ];
 
 const GPP_SECTION_TO_STATE = {
-  usnat: "US",
-  usca: "CA",
-  usco: "CO",
-  usct: "CT",
-  usnj: "NJ",
-  usva: "VA",
-  ustx: "TX",
-  usmt: "MT",
-  usor: "OR",
+  usnat: "US", usca: "CA", usco: "CO", usct: "CT", usnj: "NJ",
+  usva: "VA", ustx: "TX", usmt: "MT", usor: "OR",
 };
 
 function isSeriesForState(seriesKey, stateCode) {
   const parsed = parseSchemaToken(seriesKey);
   if (parsed?.family === "gpp" && parsed?.state) {
     const targetState = GPP_SECTION_TO_STATE[parsed.state.toLowerCase()] || parsed.state.toUpperCase();
-    if (targetState !== "US" && targetState !== stateCode) {
+    if (targetState !== "US" && targetState !== crawlStateToGppState(stateCode)) {
       return false;
     }
   }
@@ -550,6 +462,21 @@ function getSchemaFamilyLabel(seriesKey) {
   return null;
 }
 
+function CautionIcon({ size = 14 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      fill="#b45309"
+      viewBox="0 0 16 16"
+      style={{ display: "block" }}
+    >
+      <path d="M8.982 1.566a1.13 1.13 0 0 0-1.964 0L.165 13.233c-.457.778.091 1.767.982 1.767h13.706c.891 0 1.439-.99.982-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
+    </svg>
+  );
+}
+
 const ReasonTrendsChart = memo(function ReasonTrendsChart({
   viewMode,
   tableContent,
@@ -561,6 +488,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   setTableSelectedSeries,
   selectedStates,
   setSelectedStates,
+  onNavigateToNJIssue,
   chartType,
   setChartType,
   activeChart,
@@ -575,14 +503,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   const [stateMonthToSchemaAvailability, setStateMonthToSchemaAvailability] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showDataLabels, setShowDataLabels] = useState("off"); // "off" | "counts" | "percentages"
-  // When on, every line gets an evenly-spaced rainbow hue instead of its
-  // status color, so an arbitrarily large number of lines all stay visually
-  // distinguishable from each other (status color and shape are otherwise
-  // shared across many lines by design).
+  const [showDataLabels, setShowDataLabels] = useState("off");
   const [rainbowize, setRainbowize] = useState(false);
-  // Index of the dataset currently hovered in the legend, or null when
-  // nothing is hovered — drives the isolate-this-line effect below.
   const [hoveredDatasetIndex, setHoveredDatasetIndex] = useState(null);
   const chartRef = useRef(null);
 
@@ -631,7 +553,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
 
     chart.stop();
 
-    // Clear any hover tooltip
     chart.tooltip.setActiveElements([], { x: 0, y: 0 });
     chart.setActiveElements([]);
     const originalDatasets = chart.data.datasets;
@@ -825,9 +746,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
   }
 
-  // True when at least one base status color would be used by two or more
-  // of the currently selected lines — the only situation where Rainbowize
-  // has anything to do, so the button only shows then.
   const hasColorDuplicates = useMemo(() => {
     const counts = {};
     for (const seriesKey of graphSelectedSeries) {
@@ -841,9 +759,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     if (graphSelectedSeries.length === 0) return [];
     const allDatasets = [];
 
-    // How many lines end up sharing each base status color across the whole
-    // selection (base color depends only on the series, not the state) —
-    // only used for the non-rainbow gentle same-color shading below.
     const colorUsageCounts = {};
     selectedStates.forEach(s => graphSelectedSeries.forEach(sk => {
       if (!validSeriesKeys.has(sk)) return;
@@ -858,22 +773,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     let lineIndex = 0;
 
     selectedStates.forEach(stateCode => graphSelectedSeries.forEach(seriesKey => {
-    if (!validSeriesKeys.has(seriesKey)) return;
-    if (!isSeriesForState(seriesKey, stateCode)) return;
+      if (!validSeriesKeys.has(seriesKey)) return;
+      if (!isSeriesForState(seriesKey, stateCode)) return;
 
-    const baseColor = baseColorForSeries(seriesKey);
-    const seen = colorSeenCounts[baseColor] ?? 0;
-    colorSeenCounts[baseColor] = seen + 1;
+      const baseColor = baseColorForSeries(seriesKey);
+      const seen = colorSeenCounts[baseColor] ?? 0;
+      colorSeenCounts[baseColor] = seen + 1;
 
-      // Color is fixed to status (opted_out green, did_not_opt_out red,
-      // invalid/na blue, null gray) regardless of family — point shape
-      // (below) carries the family distinction instead. Multiple selected
-      // states shade apart more strongly so state comparisons stay readable.
       let color = baseColor;
       if (useRainbow) {
-        // Every line — not just repeats — gets recolored in strict
-        // ROYGBIV(+pink/black/gray) order, cycling if there are more than
-        // 10 lines selected.
         color = RAINBOW_PALETTE[lineIndex % RAINBOW_PALETTE.length];
       } else if (selectedStates.length > 1) {
         const n = selectedStates.length;
@@ -938,83 +846,53 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       });
 
       allDatasets.push({
-        label: `${stateCode} - ${seriesOptions.find(o => o.key === seriesKey)?.label || seriesKey}`,
+        label: `${formatStateLabel(stateCode)} - ${seriesOptions.find(o => o.key === seriesKey)?.label || seriesKey}`,
         data, borderColor: color, backgroundColor: chartType === "line" ? color : `${color}80`,
-        // Set explicitly (rather than relying on Chart.js's default point-
-        // color inheritance) so both built-in shapes and the legend swatch
-        // always reflect this line's current color — status-based or, with
-        // Rainbowize on, its rainbow hue — the instant it's computed above.
         pointBackgroundColor: color, pointBorderColor: color,
-        // Explicit (matches Chart.js's own line/bar defaults) rather than
-        // left unset, so the legend-hover memo below always has a concrete
-        // value to reset to — an unset key risks react-chartjs-2 leaving a
-        // stale hover-time value in place instead of clearing it.
         borderWidth: chartType === "bar" ? 0 : 3,
         fill: false, tension: 0.3, pointRadius: 5, pointHoverRadius: 7,
         pointStyle,
         borderRadius: chartType === "bar" ? { topLeft: 8, topRight: 8 } : 0,
         spanGaps: true,
         _denominators: denominators,
-        // Larger canvas variant of this line's point shape, used only while
-        // this exact line is the one being hovered in the legend — custom
-        // canvas shapes ignore pointRadius, so enlarging them on hover needs
-        // an actual bigger pre-rendered image, not just a radius bump.
         _hoverPointStyle: hoverPointStyle,
       });
     }));
     return allDatasets;
   }, [chartType, graphSelectedSeries, hasColorDuplicates, rainbowize, selectedStates, seriesOptions, stateMonthToAllRecords, stateMonthToSchemaAvailability, unifiedMonthKeys, validSeriesKeys]);
 
-    // Re-skins baseDatasets for the currently hovered legend item — computed
-    // as plain derived state (not by mutating the Chart.js instance directly)
-    // so react-chartjs-2's normal prop-diffing update path applies it, the
-    // same reliable path that renders the chart from scratch.
-    const datasets = useMemo(() => {
-      if (hoveredDatasetIndex === null) return baseDatasets;
-      const isLine = chartType === "line";
-      return baseDatasets.map((ds, i) => {
-        const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
-        if (i === hoveredDatasetIndex) {
-          return {
-            ...ds,
-            borderWidth: isLine ? 4 : ds.borderWidth,
-            borderColor: baseColor,
-            backgroundColor: baseColor,
-            pointBackgroundColor: baseColor,
-            pointBorderColor: baseColor,
-            pointRadius: isLine ? 7 : ds.pointRadius,
-            pointStyle: isLine ? (ds._hoverPointStyle || ds.pointStyle) : ds.pointStyle,
-          };
-        }
-        // Other lines just go thin and faded, not fully invisible — points
-        // keep their real shape/color/size so the chart still reads as "every
-        // line is here, just dimmed" rather than lines dropping out.
+  const datasets = useMemo(() => {
+    if (hoveredDatasetIndex === null) return baseDatasets;
+    const isLine = chartType === "line";
+    return baseDatasets.map((ds, i) => {
+      const baseColor = ds.borderColor.length > 7 ? ds.borderColor.slice(0, 7) : ds.borderColor;
+      if (i === hoveredDatasetIndex) {
         return {
           ...ds,
-          borderWidth: isLine ? 2 : ds.borderWidth,
-          borderColor: baseColor + "40",
-          backgroundColor: baseColor + "30",
+          borderWidth: isLine ? 4 : ds.borderWidth,
+          borderColor: baseColor,
+          backgroundColor: baseColor,
+          pointBackgroundColor: baseColor,
+          pointBorderColor: baseColor,
+          pointRadius: isLine ? 7 : ds.pointRadius,
+          pointStyle: isLine ? (ds._hoverPointStyle || ds.pointStyle) : ds.pointStyle,
         };
-      });
-    }, [baseDatasets, hoveredDatasetIndex, chartType]);
+      }
+      return {
+        ...ds,
+        borderWidth: isLine ? 2 : ds.borderWidth,
+        borderColor: baseColor + "40",
+        backgroundColor: baseColor + "30",
+      };
+    });
+  }, [baseDatasets, hoveredDatasetIndex, chartType]);
 
   const options = useMemo(() => ({
     responsive: true, maintainAspectRatio: false, normalized: true, customType: chartType,
-    // Chart.js animates color/point changes between updates by default,
-    // which turned the legend-hover isolate effect into a fade. Disabling
-    // animation entirely makes every update — including that one — instant.
     animation: false,
     layout: { padding: { top: 10, bottom: 10, left: 10, right: 20 } },
     plugins: {
       datalabels: {
-        // The legend-hover isolate effect below hides a dataset by appending
-        // a fully-transparent alpha suffix to its border color (making it 9
-        // chars, "#rrggbb00", instead of the normal 7-char "#rrggbb") —
-        // datalabels draws independently of the point/line's own opacity
-        // though, so without this check its number/percentage callouts
-        // would keep floating over an otherwise-invisible line. Checking
-        // length (not the literal "00" suffix) avoids false-hiding a
-        // legitimately black "#000000" line, e.g. from Rainbowize.
         display: (ctx) =>
           showDataLabels !== "off" &&
           !(typeof ctx.dataset.borderColor === "string" && ctx.dataset.borderColor.length > 7),
@@ -1029,12 +907,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         },
         font: { weight: "bold", size: LABEL_FONT_SIZE },
         formatter: (val, ctx) => dataLabelText(ctx.dataset, ctx.dataIndex, showDataLabels),
-        // Tight box: hugs the text instead of leaving wide margins at the sides.
         padding: { top: LABEL_PAD_Y, bottom: LABEL_PAD_Y, left: LABEL_PAD_X, right: LABEL_PAD_X },
         anchor: "end",
-        // Above/below + distance come from the placement solver (see
-        // labelAxisClearancePlugin): close lines get split above/below so no
-        // two labels overlap.
         align: (ctx) => getLabelPlacement(ctx).align,
         offset: (ctx) => getLabelPlacement(ctx).offset,
       },
@@ -1044,21 +918,11 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       },
       legend: {
         position: "bottom",
-        // Isolating the hovered line is done by recomputing `datasets` as
-        // React state (see hoveredDatasetIndex / the datasets useMemo
-        // above) rather than mutating the Chart.js instance here, so these
-        // just record which legend item is hovered.
         onHover: (evt, item) => setHoveredDatasetIndex(item.datasetIndex),
         onLeave: () => setHoveredDatasetIndex(null),
         labels: {
           boxWidth: 10, boxHeight: 10, usePointStyle: true, padding: 12,
           font: { size: 11, family: "'Segoe UI', sans-serif", weight: "500" }, color: "#475569",
-          // The chart's own `datasets` prop goes fully transparent for every
-          // line but the hovered one (see the datasets useMemo above), so
-          // legend swatches built from it would also vanish. Building
-          // labels from baseDatasets instead — each line's real, un-hovered
-          // color/shape — keeps every legend icon visible no matter which
-          // line is currently isolated on the chart.
           generateLabels: () => baseDatasets.map((ds, i) => ({
             text: ds.label,
             fillStyle: ds.backgroundColor,
@@ -1070,9 +934,6 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         },
       },
       tooltip: {
-        // intersect: false means hovering anywhere above a month's
-        // x-position shows that month's tooltip for every series, not just
-        // when the cursor is exactly touching a line/point.
         mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12,
         titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true,
         callbacks: {
@@ -1126,7 +987,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             {viewMode === "graph" ? (
               <>
                 <h2 className="section-title" style={{ marginTop: 0 }}>Track Compliance Evolution Over Time</h2>
-                <div className="toolbar" style={{ marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "16px" }}>
+                <div className="toolbar" style={{ marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "16px", flexWrap: "wrap" }}>
                   <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <div className="chip-group">
                       <button
@@ -1158,7 +1019,32 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                     <div className="chip-group">
                       {AVAILABLE_STATES.map(s => {
                         const active = selectedStates.includes(s);
-                        return <button key={s} className={`chip${active ? " chip--active" : ""}`} style={{ padding: "4px 12px", fontSize: "12px" }} onClick={() => setSelectedStates(prev => prev.includes(s) ? prev.filter(v => v !== s) : [...prev, s])}>{s}</button>;
+                        return (
+                          <div key={s} style={{ position: "relative", display: "inline-block" }}>
+                            {s === "NJ_NY" && active && (
+                              <span
+                                title="There is a known issue with this state's data"
+                                style={{
+                                  position: "absolute",
+                                  top: "-6px",
+                                  right: "-6px",
+                                  zIndex: 1,
+                                  lineHeight: 0,
+                                  pointerEvents: "none",
+                                }}
+                              >
+                                <CautionIcon />
+                              </span>
+                            )}
+                            <button
+                              className={`chip${active ? " chip--active" : ""}`}
+                              style={{ padding: "4px 12px", fontSize: "12px" }}
+                              onClick={() => setSelectedStates(prev => prev.includes(s) ? prev.filter(v => v !== s) : [...prev, s])}
+                            >
+                              {formatStateLabel(s)}
+                            </button>
+                          </div>
+                        );
                       })}
                     </div>
                   </div>
@@ -1188,8 +1074,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                         />
                       )}
                     </div>
-                    <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
+                    <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "12px", alignItems: "flex-end" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem", flexWrap: "wrap", width: "100%" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                           <span style={{ fontSize: "14px", fontWeight: "500", color: "#475569" }}>Labels:</span>
                           <div className="chip-group">
@@ -1249,10 +1135,46 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                         )}
                         <button className="btn-download" onClick={handleDownload}>Download PNG</button>
                       </div>
+
                       {showDataLabels === "percentages" && footnoteText && (
-                        <p style={{ margin: 0, fontSize: "11px", color: "#94a3b8", fontStyle: "italic" }}>
+                        <p style={{ margin: 0, fontSize: "11px", color: "#94a3b8", fontStyle: "italic", textAlign: "right" }}>
                           {footnoteText}
                         </p>
+                      )}
+
+                      {selectedStates.includes("NJ_NY") && (
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => onNavigateToNJIssue?.()}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onNavigateToNJIssue?.();
+                            }
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            padding: "8px 12px",
+                            background: "#fffbeb",
+                            border: "1px solid #fde68a",
+                            borderRadius: "8px",
+                            fontSize: "13px",
+                            color: "#92400e",
+                            cursor: "pointer",
+                            width: "fit-content",
+                          }}
+                        >
+                          <CautionIcon size={16} />
+                          <span>
+                            This data was collected with a NJ VPN that has a NY IP.{" "}
+                            <span style={{ textDecoration: "underline", fontWeight: "600" }}>
+                              Click here to learn more.
+                            </span>
+                          </span>
+                        </div>
                       )}
                     </div>
                   </>

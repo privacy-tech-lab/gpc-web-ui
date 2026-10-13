@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { parseSchemaToken, getSchemaTokenLabel } from "../utils/schemaClassification.js";
 import Tooltip from "./Tooltip.jsx";
 import { STATUS_COLOR_PALETTES } from "../utils/colorPalettes.js";
+import { formatStateLabel, crawlStateToGppState } from "../utils/stateLabels.js";
 
 const FAMILY_CONFIG = [
   { key: "usps",           label: "USPS",                icon: "🔒" },
@@ -44,7 +45,7 @@ function fieldsForState(state) {
 const STATUS_CONFIG = [
   { key: "opted_out",       label: "Opted Out",      cls: "sfp__pill--green" },
   { key: "did_not_opt_out", label: "Did Not Opt Out",cls: "sfp__pill--red"   },
-  { key: "invalid_missing", label: "Invalid/Missing",cls: "sfp__pill--amber" },
+  { key: "invalid_missing", label: "Invalid or Missing",cls: "sfp__pill--amber" },
   { key: "invalid",         label: "Invalid",        cls: "sfp__pill--amber" },
   { key: "not_applicable",  label: "Not Applicable", cls: "sfp__pill--grey"  },
 ];
@@ -60,11 +61,11 @@ const GPP_USNAT_FIELD_NOTES = {
   TargetedAdvertisingOptOut: "Does not legally apply to CA",
 };
 
-const GPP_USNAT_TABLE_SHARING_EXCEPTIONS = new Set(["CT", "CO", "NJ"]);
+const GPP_USNAT_TABLE_SHARING_EXCEPTIONS = new Set(["CT", "CO", "NJ_NY"]);
 
 function usnatTableFieldNote(field, tableState) {
   if (field === "SharingOptOut" && GPP_USNAT_TABLE_SHARING_EXCEPTIONS.has(tableState)) {
-    return `Does not legally apply to ${tableState}`;
+    return `Does not legally apply to ${formatStateLabel(tableState)}`;
   }
   if (field === "TargetedAdvertisingOptOut" && tableState === "CA") {
     return "Does not legally apply to CA";
@@ -197,7 +198,7 @@ function GppCard({ tokens, selectedSet, onToggleFamily, onAdd, onRemove, onRepla
   const states = useMemo(() => {
     const all = sortedStates(gppMap);
     if (!Array.isArray(geoStates) || geoStates.length === 0) return all;
-    const relevant = new Set(["US", ...geoStates]);
+    const relevant = new Set(["US", ...geoStates.map(crawlStateToGppState)]);
     return all.filter((s) => relevant.has(normalizeStateCode(s)));
   }, [gppMap, geoStates]);
 
@@ -446,7 +447,7 @@ export default function SchemaFilterPanel({
         viewMode === "table"
           ? new Set(["US"])
           : Array.isArray(geoStates) && geoStates.length > 0
-            ? new Set(["US", ...geoStates])
+            ? new Set(["US", ...geoStates.map(crawlStateToGppState)])
             : null;
 
       const saleOptedOut = ft.filter((t) => {
