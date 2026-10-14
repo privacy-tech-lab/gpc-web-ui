@@ -65,6 +65,10 @@ const chartLegend = [
 const th = { padding: "8px 10px", textAlign: "right", fontWeight: 700, borderBottom: `2px solid ${C.ink}`, fontSize: "13px" };
 const td = { padding: "7px 10px", textAlign: "right", borderBottom: `1px solid ${C.line}`, fontSize: "14px", fontVariantNumeric: "tabular-nums" };
 
+// Matrix cells shrink and wrap so the table always fits the page without scrolling
+const mth = { ...th, padding: "8px clamp(4px, 1.5vw, 10px)", whiteSpace: "normal" };
+const mtd = { ...td, padding: "7px clamp(4px, 1.5vw, 10px)", whiteSpace: "normal", fontSize: "clamp(12px, 3.2vw, 14px)" };
+
 function Section({ title, children }) {
   return (
     <section style={{ marginTop: "36px" }}>
@@ -94,26 +98,26 @@ function Stat({ value, label }) {
 function Matrix({ data, summary }) {
   return (
     <>
-      <Scroll>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <div style={{ border: `1px solid ${C.line}`, borderRadius: "8px", overflow: "hidden" }}>
+        <table style={{ width: "100%", minWidth: 0, borderCollapse: "collapse", tableLayout: "fixed" }}>
           <thead>
             <tr>
-              <th style={{ ...th, textAlign: "left" }}>IP geolocation</th>
-              {states.map((s) => <th key={s} style={th}>{s}</th>)}
+              <th style={{ ...mth, textAlign: "left", width: "28%" }}>IP geolocation</th>
+              {states.map((s) => <th key={s} style={mth}>{s}</th>)}
             </tr>
           </thead>
           <tbody>
             {data.map((row, i) => (
               <tr key={states[i]}>
-                <td style={{ ...td, textAlign: "left", fontWeight: 600 }}>{states[i]}</td>
+                <td style={{ ...mtd, textAlign: "left", fontWeight: 600 }}>{states[i]}</td>
                 {row.map((v, j) => (
-                  <td key={j} style={{ ...td, background: i === j ? C.soft : undefined, color: i === j ? "#94a3b8" : C.ink }}>{v}</td>
+                  <td key={j} style={{ ...mtd, background: i === j ? C.soft : undefined, color: i === j ? "#94a3b8" : C.ink }}>{v}</td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
-      </Scroll>
+      </div>
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "10px" }}>
         {summary.map(([label, value, color]) => (
           <div key={label} style={{ flex: "1 1 140px", padding: "10px 12px", borderRadius: "8px", background: color }}>
@@ -191,13 +195,13 @@ function NJIssuePage({ onBack }) {
 
       <Section title="Background">
         <P>
-          We have historically used MullvadVPN to get a "New Jersey" connection. The Mullvad server is physically in
-          New Jersey, but its public IP address geolocates to New York. That raised two questions: were our NJ crawls
+          We have historically performed our "New Jersey" crawl using MullvadVPN's Secaucus, NJ connection. The Mullvad server is physically in
+          New Jersey, but its public IP address geolocates to New York. This issue raised two major questions: were our NJ crawls
           receiving traffic representative of New Jersey users, and if not, how different would results be from a true
           NJ connection?
         </P>
         <P>
-          To find out, we ran a second NJ crawl through ExpressVPN, whose NJ IP truly geolocates to New Jersey. This
+          To find out, we conducted a second New Jersey crawl through ExpressVPN, a VPN service with a NJ IP address several weeks after our Mullvad September 2026 crawl. This
           investigation is tied to WebCrawler issue{" "}
           <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/issues/345" style={{ color: "#2563eb" }}>#345</a>.
         </P>
@@ -205,41 +209,28 @@ function NJIssuePage({ onBack }) {
 
       <Section title="Key findings">
         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
-          <Stat value="74" label="sites used a usnj GPP string (about 0.6% of sites crawled)" />
-          <Stat value="22" label="usnj sites that were null from the NY IP but non-null from the NJ IP" />
-          <Stat value="1.17%" label="decrease in NJ–NY complianceResults difference vs. the cross-state average" />
+          <Stat value="74" label="sites crawled by ExpressVPN now had a usnj GPP string (about 0.6% of sites crawled) compared to ZERO in the Mullvad crawl" />
+          <Stat value="22" label="of the 74 sites with a usnj GPP string in ExpressVPN's crawl were previously classified as null sites in Mullvad's crawl" />
+          <Stat value="1042" label="sites had different compliance results between the two crawls. To put that in perspective, the average difference forcrawls across different states was 1,054 sites" />
         </div>
-        <ol style={{ margin: 0, paddingLeft: "20px", color: C.muted, fontSize: "15px", lineHeight: 1.6 }}>
-          <li style={{ marginBottom: "8px" }}>
-            <strong style={{ color: C.ink }}>Mullvad's NJ server was treated as a NY connection.</strong> Where the
-            IP sits matters far more than where the server physically is.
-          </li>
-          <li style={{ marginBottom: "8px" }}>
-            <strong style={{ color: C.ink }}>NJ and NY traffic are not unusually similar.</strong> Despite being
-            neighbors, their compliance differences were about average relative to other state pairs.
-          </li>
-          <li>
-            <strong style={{ color: C.ink }}>IP geolocation is the main trigger for state-specific privacy logic.</strong>{" "}
-            Sites only applied NJ-specific behavior when the IP geolocated to NJ.
-          </li>
-        </ol>
+
       </Section>
 
-      <Section title="usnj appearances">
+      <Section title="usnj GPP string appearances">
         <P>
-          Only 74 unique sites used the usnj string, and it appeared on none of the ExpressVPN-crawl pages. Because the
-          count is small, it more likely reflects limited GPP adoption than a real lack of difference between NJ and NY
+          74 unique sites used the usnj string in the ExpressVPN crawl, and it appeared on none of the ExpressVPN crawl sites. Because the
+          count is small, it more likely reflects limited state specific GPP adoption than a significant difference between NJ and NY.
           traffic.
         </P>
         <Scroll>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 0 }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: "left" }}>Dataset</th>
-                <th style={th}>usnj before</th>
-                <th style={th}>usnj after</th>
-                <th style={th}>Unique sites</th>
-                <th style={th}>% of sites</th>
+                <th style={{ ...th, textAlign: "left", whiteSpace: "normal" }}>Dataset</th>
+                <th style={{ ...th, whiteSpace: "normal" }}>usnj before</th>
+                <th style={{ ...th, whiteSpace: "normal" }}>usnj after</th>
+                <th style={{ ...th, whiteSpace: "normal" }}>Total number of sites with usnj</th>
+                <th style={{ ...th, whiteSpace: "normal" }}>% of sites crawled</th>
               </tr>
             </thead>
             <tbody>
@@ -258,8 +249,8 @@ function NJIssuePage({ onBack }) {
 
       <Section title="Effect of switching VPNs on complianceResults">
         <P>
-          Each row pair shows how results changed when the same crawl ran from a NY-geolocated IP versus a truly
-          NJ-geolocated IP. Red marks sites that likely do not honor GPC, green those that likely do, and amber the
+          Each row shows how compliance results changed when the same crawl ran from a NY-geolocated IP (MullvadVPN) versus a
+          NJ-geolocated IP (ExpressVPN). Red marks sites that likely do not honor GPC, green those that likely do, and amber the
           crawl without usnj sites.
         </P>
         <Scroll>
@@ -267,10 +258,10 @@ function NJIssuePage({ onBack }) {
             <thead>
               <tr>
                 <th style={{ ...th, textAlign: "left" }}>Dataset</th>
-                <th style={th}>Does not honor</th>
-                <th style={th}>Honors</th>
+                <th style={th}>Does not honor GPC</th>
+                <th style={th}>Honors GPC</th>
                 <th style={th}>N/A, invalid, missing</th>
-                <th style={th}>Null</th>
+                <th style={th}>Null Sites</th>
               </tr>
             </thead>
             <tbody>
@@ -288,20 +279,20 @@ function NJIssuePage({ onBack }) {
           </table>
         </Scroll>
         <P style={{ marginTop: "14px" }}>
-          All 22 usnj sites that were null from the NY IP became non-null from the NJ IP. That points to a sudden
-          attempt at implementation, and shows NJ-specific logic failed to trigger when using Mullvad. Mullvad's server
-          was physically in NJ, but its IP behaved as a NY connection.
+          All 22 usnj sites that were classified as null from the Mullvad VPN became non-null after invoking a VPN with a NJ IP address. 
+          This suggests that the Mullvad VPN crawl was not representative of NJ traffic.  Mullvad's server
+          was physically in NJ, but its IP led its web traffic to behave as a NY connection.
         </P>
       </Section>
 
-      <Section title="usnj subset by VPN">
+      <Section title="Breakdown of the 74 usnj sites subset by VPN">
         <UsnjChart />
       </Section>
 
       <Section title="Is NJ simply similar to NY?">
         <P>
-          Given their proximity, NJ and NY might be expected to see similar traffic. If so, the NJ–NY difference would be
-          smaller than average. The matrices below count how many sites changed classification or result between each
+          Given their proximity, NJ and NY might be expected to see similar web traffic and compliance results. If so, the NJ–NY difference would be
+          smaller than the average between any given states. The matrices below count how many sites changed classification or result between each
           pair of crawl states. The average is taken across the six pairs among CA, CO, NY and CT.
         </P>
 
@@ -326,16 +317,16 @@ function NJIssuePage({ onBack }) {
         />
 
         <P style={{ marginTop: "14px" }}>
-          NJ and NY were only 7.5% and 1.2% closer than average, which is substantially smaller than the gaps between
-          other states. Geographic proximity does not produce similar compliance behavior. Other factors, such as IP
-          geolocation and state privacy requirements, matter more. NJ has comprehensive privacy laws and NY does not.
+          NJ and NY were only 7.5% and 1.2% closer than the average differences between other states, this is NOT substantially smaller than the gaps between
+          other states. Geographic proximity therefore does not produce similar compliance behavior. Other factors, such as IP
+          geolocation and state privacy requirements, seem to matter more. For instance, NJ has comprehensive privacy laws (NJDPA) and NY does not.
         </P>
       </Section>
 
       <Section title="Implications">
         <P>
-          These results support the conclusion that Mullvad's "NJ" crawl is really a NY crawl, and that ExpressVPN is
-          the true NJ crawl. Between the two crawls, 1,558 sites changed in schema classification, and 1,042 of the
+          These results support the conclusion that Mullvad's "NJ" crawl really represents how states would perform in a NY crawl, and that the ExpressVPN crawl is more representative of a tru
+          reflects more accurately how websites comply with NJ privacy laws. Between the two crawls, 1,558 sites changed in schema classification, and 1,042 of the
           11,708 sites crawled (about 8.9%) ended up with a different overall compliance result. Among the 74 sites
           that used a usnj string, overall classification changed for 36.
         </P>
@@ -347,8 +338,8 @@ function NJIssuePage({ onBack }) {
           crawls from different states do.
         </P>
         <P>
-          It also shows a limit of IP-based protections: an NJ resident could lose NJ-specific privacy protections
-          simply by connecting through a NY-geolocated IP.
+          This investigation also shows a limit of IP-based protections: an NJ resident could lose NJ-specific privacy protections
+          simply by connecting through a NY-geolocated IP, or living on a state border which allocates the wrong state IP address. 
         </P>
       </Section>
     </div>
