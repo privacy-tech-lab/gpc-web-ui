@@ -211,7 +211,7 @@ function NJIssuePage({ onBack }) {
         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
           <Stat value="74" label="sites crawled by ExpressVPN now had a usnj GPP string (about 0.6% of sites crawled) compared to ZERO in the Mullvad crawl" />
           <Stat value="22" label="of the 74 sites with a usnj GPP string in ExpressVPN's crawl were previously classified as null sites in Mullvad's crawl" />
-          <Stat value="1042" label="sites had different compliance results between the two crawls. To put that in perspective, the average difference forcrawls across different states was 1,054 sites" />
+          <Stat value="1042" label="sites had different compliance results between the two crawls. To put that in perspective, the average difference for crawls across different states was 1,054 sites" />
         </div>
 
       </Section>
