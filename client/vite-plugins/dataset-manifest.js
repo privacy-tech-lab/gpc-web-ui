@@ -2,13 +2,19 @@ import { readdirSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FILENAME_PATTERN =
-  /^Crawl_Data_(?<state>[A-Z]{2}) - (?<period>[A-Za-z0-9]+)\.csv$/;
+// State codes are two letters (CA) or two letters + underscore + two letters
+// (NJ_NY: NJ crawl collected from a NY-geolocated IP).
+const STATE_CODE = "[A-Z]{2}(?:_[A-Z]{2})?";
+const STATE_DIR_PATTERN = new RegExp(`^${STATE_CODE}$`);
+const FILENAME_PATTERN = new RegExp(
+  `^Crawl_Data_(?<state>${STATE_CODE}) - (?<period>[A-Za-z0-9]+)\\.csv$`,
+);
 
 const PNC_PREFIX = "PotentiallyNonCompliantSites";
 
 // Maps any recognized month token (lowercased) to its 1-based month number
-// and a canonical 3-letter form. Aug/August → 8, "Aug"; Sept/Sep/September → 9, "Sept".
+// and a canonical 3-letter form. Aug/August → 8, "Aug"; Sep → 9, "Sep"; Sept/September → 9, "Sept".
+// Sep and Sept are intentionally kept distinct so the key mirrors the filename.
 const MONTH_TABLE = {
   jan: { n: 1, canonical: "Jan", full: "January" },
   january: { n: 1, canonical: "Jan", full: "January" },
@@ -25,7 +31,7 @@ const MONTH_TABLE = {
   july: { n: 7, canonical: "Jul", full: "July" },
   aug: { n: 8, canonical: "Aug", full: "August" },
   august: { n: 8, canonical: "Aug", full: "August" },
-  sep: { n: 9, canonical: "Sept", full: "September" },
+  sep: { n: 9, canonical: "Sep", full: "September" },
   sept: { n: 9, canonical: "Sept", full: "September" },
   september: { n: 9, canonical: "Sept", full: "September" },
   oct: { n: 10, canonical: "Oct", full: "October" },
@@ -71,7 +77,7 @@ export function normalizePeriod(period) {
 export function buildManifest(publicDir) {
   const entries = readdirSync(publicDir, { withFileTypes: true });
   const stateDirs = entries
-    .filter((entry) => entry.isDirectory() && /^[A-Z]{2}$/.test(entry.name))
+    .filter((entry) => entry.isDirectory() && STATE_DIR_PATTERN.test(entry.name))
     .map((entry) => entry.name)
     .sort();
 
