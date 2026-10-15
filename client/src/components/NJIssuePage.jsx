@@ -201,7 +201,7 @@ function NJIssuePage({ onBack }) {
           NJ connection?
         </P>
         <P>
-          To find out, in September of 2026, we conducted a second New Jersey crawl through ExpressVPN, a VPN service with a NJ IP address several weeks after our Mullvad crawl. This
+          To find out, in September of 2026, we conducted a second New Jersey crawl through ExpressVPN, a VPN service with a NJ IP address, several weeks after our Mullvad crawl. This
           investigation is tied to WebCrawler issue{" "}
           <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/issues/345" style={{ color: "#2563eb" }}>#345</a>.
         </P>
@@ -218,8 +218,8 @@ function NJIssuePage({ onBack }) {
 
       <Section title="usnj GPP string appearances">
         <P>
-          74 unique sites used the usnj string in the ExpressVPN crawl, and it appeared on none of the ExpressVPN crawl sites. Because the
-          count is small, it more likely reflects limited state specific GPP adoption than a significant difference between NJ and NY.
+          74 unique sites used the usnj string in the ExpressVPN crawl, and it appeared on none of the MullvadVPN crawl sites. Because the
+          count is small, it more likely reflects limited state specific GPP adoption than a significant difference between NJ and NY
           traffic.
         </P>
         <Scroll>
