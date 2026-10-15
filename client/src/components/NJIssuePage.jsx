@@ -195,13 +195,13 @@ function NJIssuePage({ onBack }) {
 
       <Section title="Background">
         <P>
-          We have historically performed our "New Jersey" crawl using MullvadVPN's Secaucus, NJ connection. The Mullvad server is physically in
+          We perform our "New Jersey" crawl using MullvadVPN's Secaucus, NJ connection. The Mullvad server is physically in
           New Jersey, but its public IP address geolocates to New York. This issue raised two major questions: were our NJ crawls
           receiving traffic representative of New Jersey users, and if not, how different would results be from a true
           NJ connection?
         </P>
         <P>
-          To find out, we conducted a second New Jersey crawl through ExpressVPN, a VPN service with a NJ IP address several weeks after our Mullvad September 2026 crawl. This
+          To find out, in September of 2026, we conducted a second New Jersey crawl through ExpressVPN, a VPN service with a NJ IP address several weeks after our Mullvad crawl. This
           investigation is tied to WebCrawler issue{" "}
           <a href="https://github.com/privacy-tech-lab/gpc-web-crawler/issues/345" style={{ color: "#2563eb" }}>#345</a>.
         </P>
@@ -325,8 +325,8 @@ function NJIssuePage({ onBack }) {
 
       <Section title="Implications">
         <P>
-          These results support the conclusion that Mullvad's "NJ" crawl really represents how states would perform in a NY crawl, and that the ExpressVPN crawl is more representative of a tru
-          reflects more accurately how websites comply with NJ privacy laws. Between the two crawls, 1,558 sites changed in schema classification, and 1,042 of the
+          These results support the conclusion that Mullvad's "NJ" crawl really represents how states would perform in a NY crawl, and that the ExpressVPN crawl more 
+          accurately reflects how websites comply with NJ privacy laws. Between the two crawls, 1,558 sites changed in schema classification, and 1,042 of the
           11,708 sites crawled (about 8.9%) ended up with a different overall compliance result. Among the 74 sites
           that used a usnj string, overall classification changed for 36.
         </P>
@@ -340,6 +340,10 @@ function NJIssuePage({ onBack }) {
         <P>
           This investigation also shows a limit of IP-based protections: an NJ resident could lose NJ-specific privacy protections
           simply by connecting through a NY-geolocated IP, or living on a state border which allocates the wrong state IP address. 
+        </P>
+        <P>
+          Going forward, we will keep using Mullvad VPN but refer to these crawls as "NJ_NY" crawls, making clear that the server 
+          is in New Jersey while its IP address geolocates to New York.
         </P>
       </Section>
     </div>
