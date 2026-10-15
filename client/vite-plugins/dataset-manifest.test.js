@@ -157,3 +157,62 @@ test("buildManifest – ignores non-state directories and non-CSV files", () => 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ─── Sep / Sept ───────────────────────────────────────────────────────────────
+
+test("normalizePeriod – AugSep and AugSept produce identical results", () => {
+  assert.deepEqual(normalizePeriod("AugSep2026"), normalizePeriod("AugSept2026"));
+  assert.equal(normalizePeriod("AugSep2026").key, "AugSept2026");
+  assert.equal(normalizePeriod("AugSep2026").label, "Aug-Sept 2026");
+});
+
+test("buildManifest – AugSep2026.csv is keyed AugSept2026 and keeps its filename", () => {
+  const root = makeFixture({ CA: ["Crawl_Data_CA - AugSep2026.csv"] });
+  try {
+    const p = buildManifest(root).periodsByState.CA[0];
+    assert.equal(p.key, "AugSept2026");
+    assert.equal(p.file, "Crawl_Data_CA - AugSep2026.csv");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("buildManifest – AugSep and AugSept in the same state are a duplicate", () => {
+  const root = makeFixture({
+    CA: ["Crawl_Data_CA - AugSep2026.csv", "Crawl_Data_CA - AugSept2026.csv"],
+  });
+  try {
+    assert.throws(() => buildManifest(root), /Duplicate period "AugSept2026" in CA/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ─── NJ_NY ────────────────────────────────────────────────────────────────────
+
+test("buildManifest – supports the NJ_NY state folder and filenames", () => {
+  const root = makeFixture({
+    CA: ["Crawl_Data_CA - May2025.csv"],
+    NJ_NY: ["Crawl_Data_NJ_NY - May2025.csv", "Crawl_Data_NJ_NY - AugSep2026.csv"],
+  });
+  try {
+    const m = buildManifest(root);
+    assert.deepEqual(m.states, ["CA", "NJ_NY"]);
+    assert.deepEqual(
+      m.periodsByState.NJ_NY.map((p) => p.key),
+      ["May2025", "AugSept2026"],
+    );
+    assert.equal(m.periodsByState.NJ_NY[0].file, "Crawl_Data_NJ_NY - May2025.csv");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("buildManifest – ignores files whose state prefix doesn't match the folder", () => {
+  const root = makeFixture({ NJ_NY: ["Crawl_Data_NJ - May2025.csv"] });
+  try {
+    assert.deepEqual(buildManifest(root).states, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
