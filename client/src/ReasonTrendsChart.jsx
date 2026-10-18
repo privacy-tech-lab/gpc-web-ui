@@ -523,8 +523,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       activeSchemaFamilies.length === 1
         ? activeSchemaFamilies[0]
         : activeSchemaFamilies.slice(0, -1).join(", ") + " and " + activeSchemaFamilies.at(-1);
-    return `* Percentages for ${list} series are out of sites with some data for that variable, not total sites.`;
-  }, [activeSchemaFamilies]);
+       return `* Percentages for ${list} are calculated only from sites where data was collected for that signal, not from total sites.`;
+        }, [activeSchemaFamilies]);
 
   useEffect(() => {
     if (chartRef.current) {
