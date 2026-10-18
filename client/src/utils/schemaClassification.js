@@ -430,7 +430,7 @@ export function isSchemaRowNonCompliant(schemaResult) {
     return schemaResult.complianceResult === "Likely Does Not Honor GPC";
   }
 
-  // 2. Fallback to the legacy check (for historical data & GPP Breakdown charts)
+  // 2. Fallback to the legacy check (for historical data & Before After Breakdown charts)
   return (
     Array.isArray(schemaResult?.entries) &&
     schemaResult.entries.some(
