@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState, useRef, lazy, Suspense } from "react";
 import Papa from "papaparse";
 import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
+import NJIssuePage from "./components/NJIssuePage.jsx";
 import SideNav from "./components/SideNav.jsx";
 import { loadDataset, preloadAllDatasets, datasetCache } from "./utils/datasetCache.js";
+import { formatStateLabel, crawlStateToGppState } from "./utils/stateLabels.js";
 
 const BeforeAfterBreakdown = lazy(
   () => import("./components/BeforeAfterBreakdown.jsx"),
@@ -30,6 +32,59 @@ function TableIcon() {
     <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" fill="currentColor" viewBox="0 0 16 16">
       <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm1 2v2h3V4H1zm4 0v2h3V4H5zm4 0v2h3V4H9zm4 0v2h2V4h-2zM1 7v2h3V7H1zm4 0v2h3V7H5zm4 0v2h2V7h-2zm-12 3v2h3v-2H1zm4 0v2h3v-2H5zm4 0v2h3v-2H9zm4 0v2h2v-2h-2z" />
     </svg>
+  );
+}
+
+function CautionIcon({ size = 14 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      fill="#b45309"
+      viewBox="0 0 16 16"
+      style={{ display: "block" }}
+    >
+      <path d="M8.982 1.566a1.13 1.13 0 0 0-1.964 0L.165 13.233c-.457.778.091 1.767.982 1.767h13.706c.891 0 1.439-.99.982-1.767zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
+    </svg>
+  );
+}
+
+function NJIPNotice({ onClick }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        marginTop: "16px",
+        padding: "8px 12px",
+        background: "#fffbeb",
+        border: "1px solid #fde68a",
+        borderRadius: "8px",
+        fontSize: "13px",
+        color: "#92400e",
+        cursor: "pointer",
+        width: "fit-content",
+      }}
+    >
+      <CautionIcon size={16} />
+      <span>
+        This data was collected with a NJ VPN that has a NY IP.{" "}
+        <span style={{ textDecoration: "underline", fontWeight: "600" }}>
+          Click here to learn more.
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -80,6 +135,7 @@ const TIME_PERIODS = [
   { key: "Jan2026", label: "January 2026" },
   { key: "Feb2026", label: "February 2026" },
   { key: "Apr2026", label: "April 2026" },
+  { key: "AugSep2026", label: "Aug-Sep 2026" },
 ];
 
 const STATE_MONTHS = {
@@ -93,10 +149,11 @@ const STATE_MONTHS = {
     "AugSeptOct2025",
     "Jan2026",
     "Apr2026",
+    "AugSep2026",
   ],
-  CT: ["FebMar2025", "May2025", "AugSeptOct2025", "Feb2026", "Apr2026"],
-  CO: ["FebMar2025", "May2025", "AugSeptOct2025", "Jan2026", "Apr2026"],
-  NJ: ["AugSeptOct2025", "Feb2026", "Apr2026"],
+  CT: ["FebMar2025", "May2025", "AugSeptOct2025", "Feb2026", "Apr2026", "AugSep2026"],
+  CO: ["FebMar2025", "May2025", "AugSeptOct2025", "Jan2026", "Apr2026", "AugSep2026"],
+  NJ_NY: ["AugSeptOct2025", "Feb2026", "Apr2026", "AugSep2026"],
 };
 
 const CATEGORY_DESCRIPTIONS = {
@@ -112,8 +169,19 @@ const AVAILABLE_STATES = datasetsManifest.states;
 const DEFAULT_STATE = AVAILABLE_STATES.includes("CA")
   ? "CA"
   : (AVAILABLE_STATES[0] ?? "CA");
-const DEFAULT_PERIOD =
-  datasetsManifest.periodsByState[DEFAULT_STATE]?.at(-1)?.key ?? "";
+const PREFERRED_PERIOD_KEY = "AugSep2026";
+
+/** Preferred default period for a state, falling back to its latest period. */
+function getDefaultPeriodKey(state) {
+  const periods = datasetsManifest.periodsByState[state] || [];
+  return (
+    periods.find((period) => period.key === PREFERRED_PERIOD_KEY)?.key ??
+    periods.at(-1)?.key ??
+    ""
+  );
+}
+
+const DEFAULT_PERIOD = getDefaultPeriodKey(DEFAULT_STATE);
 
 function findPeriod(state, key) {
   return (datasetsManifest.periodsByState[state] || []).find(
@@ -247,9 +315,37 @@ function App() {
   const [expandedFilterCategories, setExpandedFilterCategories] = useState({});
   // { column, direction: "asc" | "desc" } or null for the dataset's original order.
   const [sortConfig, setSortConfig] = useState(null);
+  const [screen, setScreen] = useState(() => getParam(["screen"], "app"));
 
   useEffect(() => {
     preloadAllDatasets();
+  }, []);
+
+  function goToNJIssuePage() {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("screen", "nj-issue");
+    const newUrl = window.location.pathname + "?" + params.toString();
+    window.history.pushState({ screen: "nj-issue" }, "", newUrl);
+    setScreen("nj-issue");
+    window.scrollTo(0, 0);
+  }
+
+  function goBackFromNJIssue() {
+    if (typeof window === "undefined") {
+      setScreen("app");
+      return;
+    }
+    window.history.back();
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function handlePopState() {
+      setScreen(getParam(["screen"], "app"));
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   function goToSection(sectionId) {
@@ -403,7 +499,7 @@ function App() {
     const periods = datasetsManifest.periodsByState[selectedState] || [];
     const hasMatch = periods.some((period) => period.key === selectedTimePeriod);
     if (!hasMatch && periods.length > 0) {
-      setSelectedTimePeriod(periods[periods.length - 1].key);
+      setSelectedTimePeriod(getDefaultPeriodKey(selectedState));
       setCurrentPage(1);
     }
   }, [selectedState, selectedTimePeriod]);
@@ -432,14 +528,17 @@ function App() {
           const parts = key.split("|");
           if (parts.length >= 2) {
             const keyState = parts[1];
-            return keyState === selectedState || keyState === "US" || keyState === "usnat";
+            return keyState === crawlStateToGppState(selectedState) || keyState === "US" || keyState === "usnat";
           }
           return false;
         }
         const parts = key.split("|");
         if (parts.length >= 2) {
           const keyState = parts[1];
-          if (AVAILABLE_STATES.includes(keyState) && keyState !== selectedState) {
+          if (
+            AVAILABLE_STATES.map(crawlStateToGppState).includes(keyState) &&
+            keyState !== crawlStateToGppState(selectedState)
+          ) {
             return false;
           }
         }
@@ -568,8 +667,6 @@ function App() {
       if (isSiteUrlColumn(column)) return;
 
       const rawLower = column.toLowerCase();
-
-      if (rawLower === "site id" || rawLower === "site_id") return;
 
       const friendlyLower = getColumnDisplayName(column, headerFriendlyNames).toLowerCase();
       const schemaColLower = SCHEMA_CLASSIFICATION_COLUMN.toLowerCase();
@@ -864,20 +961,37 @@ function App() {
       <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <label htmlFor="state-select">State:</label>
-          <select
-            id="state-select"
-            value={selectedState}
-            onChange={(e) => {
-              setSelectedState(e.target.value);
-              setCurrentPage(1);
-            }}
-          >
-            {AVAILABLE_STATES.map((stateCode) => (
-              <option key={stateCode} value={stateCode}>
-                {stateCode}
-              </option>
-            ))}
-          </select>
+          <div style={{ position: "relative", display: "inline-block" }}>
+            {selectedState === "NJ_NY" && (
+              <span
+                title="There is a known issue with this state's data"
+                style={{
+                  position: "absolute",
+                  top: "-6px",
+                  right: "-6px",
+                  zIndex: 1,
+                  lineHeight: 0,
+                  pointerEvents: "none",
+                }}
+              >
+                <CautionIcon />
+              </span>
+            )}
+            <select
+              id="state-select"
+              value={selectedState}
+              onChange={(e) => {
+                setSelectedState(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              {AVAILABLE_STATES.map((stateCode) => (
+                <option key={stateCode} value={stateCode}>
+                  {formatStateLabel(stateCode)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1106,8 +1220,14 @@ function App() {
       )}
 
       {renderTableBody()}
+
+      {selectedState === "NJ_NY" && <NJIPNotice onClick={goToNJIssuePage} />}
     </div>
   );
+
+  if (screen === "nj-issue") {
+    return <NJIssuePage onBack={goBackFromNJIssue} />;
+  }
 
   return (
     <div className="app-layout">
@@ -1275,7 +1395,7 @@ function App() {
                   <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Trends Chart</h3>
                   <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
                     <li>Track historical GPC compliance trends over time</li>
-                    <li>Compare response rates across US states (CA, CT, CO, NJ)</li>
+                    <li>Compare response rates across US states (CA, CT, CO, NJ/NY)</li>
                     <li>Filter graphs by compliance status or violation reasons</li>
                   </ul>
                 </div>
@@ -1407,6 +1527,7 @@ function App() {
         setTableSelectedSeries={setTableSelectedSeries}
         selectedStates={selectedStates}
         setSelectedStates={setSelectedStates}
+        onNavigateToNJIssue={goToNJIssuePage}
         tableSelectedState={selectedState}
         chartType={chartType}
         setChartType={setChartType}
@@ -1438,6 +1559,7 @@ function App() {
               <BeforeAfterBreakdown
                 timePeriods={TIME_PERIODS}
                 stateMonths={STATE_MONTHS}
+                onNavigateToNJIssue={goToNJIssuePage}
               />
             </Suspense>
           </LazyOnView>

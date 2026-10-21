@@ -133,24 +133,48 @@ function compareEntries(a, b) {
   );
 }
 
-// Maps 1.1.0 human-readable statuses to 1.0.0 internal statuses
+// Lowercases and strips punctuation/underscores so that variants such as
+// "Invalid/Missing", "Invalid Missing", "Invalid or Missing", "invalid_missing"
+// all collapse to the same comparison key.
+function toComparisonKey(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Maps 1.1.0 human-readable statuses (and any spelling variant) to the
+// 1.0.0 internal statuses
 function normalizeStatus(rawStatus) {
   const statusStr = String(rawStatus || "").trim();
-  switch (statusStr) {
-    case "Opted Out":
+  switch (toComparisonKey(statusStr)) {
+    case "opted out":
       return "opted_out";
-    case "Did Not Opt Out":
+    case "did not opt out":
       return "did_not_opt_out";
-    case "Invalid Missing":      
-    case "Invalid or Missing":
+    case "invalid missing":
+    case "invalid or missing":
+    case "invalid and missing":
       return "invalid_missing";
-    case "Invalid":
+    case "invalid":
       return "invalid";
-    case "Not Applicable":
+    case "not applicable":
       return "not_applicable";
     default:
       return statusStr;
   }
+}
+
+const COMPLIANCE_RESULT_NA = "Not Applicable/Invalid/Missing";
+
+function normalizeComplianceResult(rawResult) {
+  const trimmed = String(rawResult ?? "").trim();
+  if (!trimmed) return COMPLIANCE_RESULT_NA;
+  const key = toComparisonKey(trimmed).replace(/\b(or|and)\b\s*/g, "").replace(/\s+/g, " ").trim();
+  if (key === "not applicable invalid missing") return COMPLIANCE_RESULT_NA;
+  if (key === "likely does not honor gpc") return "Likely Does Not Honor GPC";
+  if (key === "likely honors gpc") return "Likely Honors GPC";
+  return trimmed;
 }
 
 function collectTopLevelClassification(entries, errors, family, value) {
@@ -317,7 +341,7 @@ export function parseSchemaClassificationCell(rawValue) {
     tokens: [],
     labels: {},
     descriptions: {},
-    complianceResult: "Not Applicable/Invalid/Missing", // Added to default state
+    complianceResult: COMPLIANCE_RESULT_NA,
     parseError: null,
   };
 
@@ -366,7 +390,7 @@ export function parseSchemaClassificationCell(rawValue) {
   });
 
   // Extract the new complianceResult field (falling back if missing)
-  const complianceResult = parsed.complianceResult || "Not Applicable/Invalid/Missing";
+  const complianceResult = normalizeComplianceResult(parsed.complianceResult);
 
   return {
     parsed,
@@ -400,13 +424,13 @@ export function isSchemaRowNonCompliant(schemaResult) {
   // 1. Check the new top-level field first (for new data)
   if (
     schemaResult?.complianceResult && 
-    schemaResult.complianceResult !== "Not Applicable/Invalid/Missing" &&
+    schemaResult.complianceResult !== COMPLIANCE_RESULT_NA &&
     schemaResult.complianceResult !== "Unknown"
   ) {
     return schemaResult.complianceResult === "Likely Does Not Honor GPC";
   }
 
-  // 2. Fallback to the legacy check (for historical data & GPP Breakdown charts)
+  // 2. Fallback to the legacy check (for historical data & Before After Breakdown charts)
   return (
     Array.isArray(schemaResult?.entries) &&
     schemaResult.entries.some(
