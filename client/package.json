@@ -11,20 +11,20 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-rsc": "^0.5.36",
+    "@vitejs/plugin-rsc": "^0.5.38",
     "chart.js": "4.5.1",
     "chartjs-plugin-datalabels": "^2.2.0",
     "papaparse": "^5.7.0",
-    "react": "^19.3.0",
+    "react": "^19.3.1",
     "react-chartjs-2": "5.3.1",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
