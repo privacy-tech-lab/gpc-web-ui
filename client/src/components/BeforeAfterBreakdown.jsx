@@ -13,6 +13,7 @@ import { Bar } from "react-chartjs-2";
 import ChartDataLabels from "chartjs-plugin-datalabels";
 import { parseJsonLike } from "../utils/schemaClassification.js";
 import { formatStateLabel } from "../utils/stateLabels.js";
+import useMediaQuery from "../utils/useMediaQuery.js";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Legend, ChartTooltip, ChartDataLabels);
 
@@ -644,6 +645,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     chart.update("none");
   }
 
+  const isNarrow = useMediaQuery("(max-width: 600px)");
   const availablePeriods = stateMonths[selectedState] ?? [];
   const periodLabel = selectedPeriods.length > 0 
     ? selectedPeriods.map(p => timePeriods.find((t) => t.key === p)?.label ?? p).join(", ")
@@ -656,17 +658,17 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
     responsive: true,
     maintainAspectRatio: false,
     normalized: true, 
-    layout: { padding: { top: 10, bottom: 10, left: 10, right: 20 } },
+    layout: { padding: isNarrow ? { top: 6, bottom: 6, left: 2, right: 8 } : { top: 10, bottom: 10, left: 10, right: 20 } },
     scales: {
       x: {
         stacked: true,
         grid: { display: false, drawBorder: false },
         border: { display: false },
-        ticks: { font: { size: 11, family: "'Segoe UI', sans-serif" }, color: "#64748b" },
+        ticks: { font: { size: isNarrow ? 10 : 11, family: "'Segoe UI', sans-serif" }, color: "#64748b" },
         title: {
           display: true,
           text: "Number of Sites",
-          font: { size: 12, weight: "600", family: "'Segoe UI', sans-serif" },
+          font: { size: isNarrow ? 11 : 12, weight: "600", family: "'Segoe UI', sans-serif" },
           color: "#475569",
           padding: { top: 10 },
         },
@@ -677,7 +679,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
         border: { display: false },
         ticks: { 
           autoSkip: false, // Forces Chart.js to stop hiding crowded labels
-          font: { size: 13, weight: "600", family: "'Segoe UI', sans-serif" }, 
+          font: { size: isNarrow ? 11 : 13, weight: "600", family: "'Segoe UI', sans-serif" }, 
           color: "#1e293b" 
         },
       },
@@ -686,7 +688,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
       datalabels: {
         display: showDataLabels,
         color: "#000000",
-        font: { weight: "bold", size: 14 },
+        font: { weight: "bold", size: isNarrow ? 11 : 14 },
         formatter: (val) => (val > 0 ? val.toLocaleString() : ""),
         anchor: "center",
         align: "center",
@@ -754,15 +756,15 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           boxHeight: 12,
           usePointStyle: true,
           pointStyle: "circle",
-          padding: 10,
-          font: { size: 12, family: "'Segoe UI', sans-serif", weight: "500" },
+          padding: isNarrow ? 8 : 10,
+          font: { size: isNarrow ? 10 : 12, family: "'Segoe UI', sans-serif", weight: "500" },
           color: "#475569",
         },
       },
       title: {
         display: true,
         text: [`${selectedField} (${formatStateLabel(selectedState)})`],
-        font: { size: 15, weight: "700", family: "'Segoe UI', sans-serif" },
+        font: { size: isNarrow ? 13 : 15, weight: "700", family: "'Segoe UI', sans-serif" },
         color: "#1e293b",
         padding: { bottom: 5 }, // space between title and legend
         textAlign: "left",
@@ -771,8 +773,8 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
         mode: "index",
         backgroundColor: "rgba(15, 23, 42, 0.9)", 
         padding: 12,
-        titleFont: { size: 14, weight: "700", family: "'Segoe UI', sans-serif" },
-        bodyFont: { size: 13, family: "'Segoe UI', sans-serif" },
+        titleFont: { size: isNarrow ? 12 : 14, weight: "700", family: "'Segoe UI', sans-serif" },
+        bodyFont: { size: isNarrow ? 11 : 13, family: "'Segoe UI', sans-serif" },
         cornerRadius: 8,
         usePointStyle: true,
         callbacks: {
@@ -795,84 +797,85 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   // ── 5f. Template Dashboard Markup Render Block ────────────────────────────
   return (
     <div className="card card--padded section">
-      <h2>Privacy Compliance Before and After Sending GPC Signal</h2>
+      <h2 className="bab-title">Privacy Compliance Before and After Sending GPC Signal</h2>
 
       {/* Control Configuration Interface */}
-      <div className="toolbar" role="group" aria-label="Privacy breakdown chart filters">
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", paddingRight: "12px"}}>
-          
-          <label htmlFor="gs-framework" style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Framework:</label>
-          <select id="gs-framework" value={selectedFramework} onChange={(e) => setSelectedFramework(e.target.value)} style={{ padding: "4px 8px" }}>
-            {Object.keys(PRIVACY_FRAMEWORK_DECODERS).map((fKey) => (
-              <option key={fKey} value={fKey}>{PRIVACY_FRAMEWORK_DECODERS[fKey].label}</option>
-            ))}
-          </select>
-
-          <label htmlFor="gs-state" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>State:</label>
-          <div style={{ position: "relative", display: "inline-block" }}>
-            {selectedState === "NJ_NY" && (
-              <span
-                title="There is a known issue with this state's data"
-                style={{
-                  position: "absolute",
-                  top: "-6px",
-                  right: "-6px",
-                  zIndex: 1,
-                  lineHeight: 0,
-                  pointerEvents: "none",
-                }}
-              >
-                <CautionIcon />
-              </span>
-            )}
-            <select id="gs-state" value={selectedState} onChange={(e) => setSelectedState(e.target.value)} style={{ padding: "4px 8px" }}>
-              {availableStates.map((s) => <option key={s} value={s}>{formatStateLabel(s)}</option>)}
+      <div className="toolbar bab-toolbar" role="group" aria-label="Privacy breakdown chart filters">
+        <div className="bab-controls">
+          <div className="bab-field">
+            <label htmlFor="gs-framework">Framework:</label>
+            <select id="gs-framework" value={selectedFramework} onChange={(e) => setSelectedFramework(e.target.value)} style={{ padding: "4px 8px" }}>
+              {Object.keys(PRIVACY_FRAMEWORK_DECODERS).map((fKey) => (
+                <option key={fKey} value={fKey}>{PRIVACY_FRAMEWORK_DECODERS[fKey].label}</option>
+              ))}
             </select>
           </div>
 
-          <div style={{ position: "relative", display: "flex", alignItems: "center", marginLeft: "4px" }}>
-            <label style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginRight: "8px" }}>Periods:</label>
-            <button 
+          <div className="bab-field">
+            <label htmlFor="gs-state">State:</label>
+            <div style={{ position: "relative", display: "inline-block" }}>
+              {selectedState === "NJ_NY" && (
+                <span
+                  title="There is a known issue with this state's data"
+                  style={{
+                    position: "absolute",
+                    top: "-6px",
+                    right: "-6px",
+                    zIndex: 1,
+                    lineHeight: 0,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <CautionIcon />
+                </span>
+              )}
+              <select id="gs-state" value={selectedState} onChange={(e) => setSelectedState(e.target.value)} style={{ padding: "4px 8px" }}>
+                {availableStates.map((s) => <option key={s} value={s}>{formatStateLabel(s)}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="bab-field bab-periods">
+            <label>Periods:</label>
+            <button
+              type="button"
+              className="bab-periods__button"
+              aria-expanded={isPeriodDropdownOpen}
               onClick={() => setIsPeriodDropdownOpen(!isPeriodDropdownOpen)}
-              style={{ padding: "4px 8px", fontSize: "13px", cursor: "pointer", background: "#fff", border: "1px solid #cbd5e1", borderRadius: "4px", minWidth: "150px", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center" }}
             >
               {/* DYNAMIC LABEL */}
-              <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>
-                {selectedPeriods.length === 0 
-                  ? "Select periods..." 
-                  : selectedPeriods.length === 1 
+              <span style={{ fontWeight: "600", color: "#475569" }}>
+                {selectedPeriods.length === 0
+                  ? "Select periods..."
+                  : selectedPeriods.length === 1
                     ? (timePeriods.find((t) => t.key === selectedPeriods[0])?.label ?? selectedPeriods[0])
                     : `${selectedPeriods.length} periods selected`
                 }
               </span>
               <span style={{ fontSize: "10px", marginLeft: "8px" }}>▼</span>
             </button>
-            
+
             {isPeriodDropdownOpen && (
-              <div style={{ 
-                position: "absolute", top: "100%", left: "55px", marginTop: "4px", zIndex: 50, 
-                background: "white", border: "1px solid #e2e8f0", borderRadius: "6px", padding: "10px", 
-                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)", display: "flex", flexDirection: "column", gap: "8px", minWidth: "180px", maxHeight: "300px", overflowY: "auto"
-              }}>
+              <div className="bab-periods__menu">
                 {availablePeriods.map((p) => {
                   const pLabel = timePeriods.find((t) => t.key === p)?.label ?? p;
                   return (
-                    <label key={p} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#475569", cursor: "pointer" }}>
-                      <input 
-                            type="checkbox" 
-                            checked={selectedPeriods.includes(p)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                // 1. Create the new list of selections
-                                const nextPeriods = [...selectedPeriods, p];
-                                // 2. Filter availablePeriods to only include items that are in nextPeriods
-                                const sortedPeriods = availablePeriods.filter((item) => nextPeriods.includes(item));
-                                setSelectedPeriods(sortedPeriods);
-                              } else {
-                                setSelectedPeriods(selectedPeriods.filter((item) => item !== p));
-                              }
-                            }}
-                          />
+                    <label key={p} className="bab-periods__option">
+                      <input
+                        type="checkbox"
+                        checked={selectedPeriods.includes(p)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            // 1. Create the new list of selections
+                            const nextPeriods = [...selectedPeriods, p];
+                            // 2. Filter availablePeriods to only include items that are in nextPeriods
+                            const sortedPeriods = availablePeriods.filter((item) => nextPeriods.includes(item));
+                            setSelectedPeriods(sortedPeriods);
+                          } else {
+                            setSelectedPeriods(selectedPeriods.filter((item) => item !== p));
+                          }
+                        }}
+                      />
                       {pLabel}
                     </label>
                   );
@@ -881,17 +884,19 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
             )}
           </div>
 
-          <label htmlFor="gs-field" style={{ fontSize: "13px", fontWeight: "600", color: "#475569", marginLeft: "4px" }}>Field:</label>
-          <select id="gs-field" value={selectedField} onChange={(e) => setSelectedField(e.target.value)} style={{ padding: "4px 8px" }}>
-            {PRIVACY_FRAMEWORK_DECODERS[selectedFramework].fields.map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
+          <div className="bab-field">
+            <label htmlFor="gs-field">Field:</label>
+            <select id="gs-field" value={selectedField} onChange={(e) => setSelectedField(e.target.value)} style={{ padding: "4px 8px" }}>
+              {PRIVACY_FRAMEWORK_DECODERS[selectedFramework].fields.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Split GPP Checkbox */}
         {selectedFramework === "GPP" && (
-          <div style={{ display: "flex", alignItems: "center", gap: "14px", paddingLeft: "12px" }}>
+          <div className="bab-split">
             <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "13px", color: "#475569", cursor: "pointer" }}>
               <input 
                 type="checkbox" 
@@ -933,7 +938,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
             </p>
           )}
 
-          <div style={{ height: dynamicHeight, marginTop: "0.75rem", transition: "height 0.3s ease-in-out" }}>
+          <div style={{ height: dynamicHeight, marginTop: "0.75rem", transition: "height 0.3s ease-in-out", minWidth: 0 }}>
             <Bar 
               ref={chartRef} 
               data={chartData} 
@@ -943,7 +948,7 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
           </div>
 
           {/* Action Execution Footer Toolbar */}
-          <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "1.5rem" }}>
+          <div className="bab-footer">
             <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "14px", color: "#475569", cursor: "pointer" }}>
               <input type="checkbox" checked={showInvalid} onChange={(e) => setShowInvalid(e.target.checked)} />
               Show invalid
