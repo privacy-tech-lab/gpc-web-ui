@@ -33,6 +33,14 @@ export default function Tooltip({
         let top = 0;
         let left = rect.left + rect.width / 2 + scrollX;
 
+        // Keep the (centered) bubble inside the viewport on narrow screens.
+        const margin = 8;
+        const half = Math.min(250, window.innerWidth - margin * 2) / 2;
+        left = Math.min(
+            Math.max(left, scrollX + margin + half),
+            scrollX + window.innerWidth - margin - half
+        );
+
         if (position === "top") {
             top = rect.top + scrollY - gap;
         } else {
