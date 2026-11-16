@@ -40,9 +40,11 @@ const LABEL_COLLISION_PX = LABEL_BOX_HEIGHT + LABEL_OFFSET;
 
 function dataLabelText(dataset, dataIndex, mode) {
   const val = dataset?.data?.[dataIndex];
-  if (!val || val <= 0) return "";
+  // null/NaN means "no data for this period" (no label); 0 is a real value.
+  if (val == null || Number.isNaN(val) || val < 0) return "";
   if (mode === "counts") return val.toLocaleString();
   if (mode === "percentages") {
+    if (val === 0) return "0.0%";
     const denom = dataset._denominators?.[dataIndex];
     if (!denom) return "";
     return ((val / denom) * 100).toFixed(1) + "%";
