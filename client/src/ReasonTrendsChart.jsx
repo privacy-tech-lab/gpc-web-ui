@@ -14,6 +14,7 @@ import { Line, Bar } from "react-chartjs-2";
 import ChartDataLabels from "chartjs-plugin-datalabels";
 
 import Tooltip from "./components/Tooltip";
+import useMediaQuery from "./utils/useMediaQuery.js";
 import ChartSchemaFilterPanel from "./components/ChartSchemaFilterPanel.jsx";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
@@ -887,10 +888,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
     });
   }, [baseDatasets, hoveredDatasetIndex, chartType]);
 
+  const isNarrow = useMediaQuery("(max-width: 600px)");
+  // Filters sit above the chart/table on small screens; this controls whether
+  // the (tall) filter panel is expanded there. Ignored by CSS on wide screens.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   const options = useMemo(() => ({
     responsive: true, maintainAspectRatio: false, normalized: true, customType: chartType,
     animation: false,
-    layout: { padding: { top: 10, bottom: 10, left: 10, right: 20 } },
+    layout: { padding: isNarrow ? { top: 6, bottom: 6, left: 2, right: 8 } : { top: 10, bottom: 10, left: 10, right: 20 } },
     plugins: {
       datalabels: {
         display: (ctx) =>
@@ -921,8 +927,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         onHover: (evt, item) => setHoveredDatasetIndex(item.datasetIndex),
         onLeave: () => setHoveredDatasetIndex(null),
         labels: {
-          boxWidth: 10, boxHeight: 10, usePointStyle: true, padding: 12,
-          font: { size: 11, family: "'Segoe UI', sans-serif", weight: "500" }, color: "#475569",
+          boxWidth: 10, boxHeight: 10, usePointStyle: true, padding: isNarrow ? 8 : 12,
+          font: { size: isNarrow ? 10 : 11, family: "'Segoe UI', sans-serif", weight: "500" }, color: "#475569",
           generateLabels: () => baseDatasets.map((ds, i) => ({
             text: ds.label,
             fillStyle: ds.backgroundColor,
@@ -934,8 +940,8 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
         },
       },
       tooltip: {
-        mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: 12,
-        titleFont: { size: 14, weight: "700" }, bodyFont: { size: 13 }, cornerRadius: 8, usePointStyle: true,
+        mode: "index", intersect: false, backgroundColor: "rgba(15, 23, 42, 0.9)", padding: isNarrow ? 8 : 12,
+        titleFont: { size: isNarrow ? 12 : 14, weight: "700" }, bodyFont: { size: isNarrow ? 11 : 13 }, cornerRadius: 8, usePointStyle: true,
         callbacks: {
           label: (ctx) => {
             const val = ctx.parsed.y;
@@ -955,24 +961,24 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
       title: { display: false, text: "Schema classification trends over months", font: { size: 15, weight: "700" }, color: "#1e293b", padding: { bottom: 20 } },
     },
     scales: {
-      y: { beginAtZero: true, grid: { color: "rgba(0, 0, 0, 0.05)", drawBorder: false }, border: { display: false }, ticks: { font: { size: 12 }, color: "#64748b" }, title: { display: true, text: "Number of Sites", font: { size: 12, weight: "600" }, color: "#475569" } },
+      y: { beginAtZero: true, grid: { color: "rgba(0, 0, 0, 0.05)", drawBorder: false }, border: { display: false }, ticks: { font: { size: isNarrow ? 10 : 12 }, color: "#64748b" }, title: { display: true, text: "Number of Sites", font: { size: isNarrow ? 11 : 12, weight: "600" }, color: "#475569" } },
       x: {
         grid: { display: false },
         border: { display: false },
         ticks: {
-          font: { size: 12 },
+          font: { size: isNarrow ? 10 : 12 },
           color: "#64748b",
           autoSkip: false,
           callback: function (val, index) {
             const total = labels.length;
-            const step = Math.max(1, Math.floor(total / 8));
+            const step = Math.max(1, Math.floor(total / (isNarrow ? 4 : 8)));
             return index % step === 0 ? (labels[index] ?? this.getLabelForValue(val)) : null;
           },
         },
-        title: { display: true, text: "Month", font: { size: 12, weight: "600" }, color: "#475569" },
+        title: { display: true, text: "Month", font: { size: isNarrow ? 11 : 12, weight: "600" }, color: "#475569" },
       },
     },
-  }), [baseDatasets, chartType, labels, showDataLabels]);
+  }), [baseDatasets, chartType, labels, showDataLabels, isNarrow]);
 
   const activeSeries = viewMode === "table" ? tableSelectedSeries : graphSelectedSeries;
   const setActiveSeries = viewMode === "table" ? setTableSelectedSeries : setGraphSelectedSeries;
@@ -980,15 +986,15 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
   return (
     <div className="card card--padded section">
       <div id="section-trends" style={{ display: activeChart === "trends" || viewMode === "table" ? "block" : "none" }}>
-        <div style={{ display: "flex", flexDirection: "row", gap: "20px", alignItems: "flex-start" }}>
+        <div className="trends-layout">
 
-          {/* LEFT SIDE: chart/table content */}
-          <div style={{ flex: "2.8 1 0%", minWidth: 0 }}>
+          {/* chart/table content (below the filters on small screens) */}
+          <div className="trends-main">
             {viewMode === "graph" ? (
               <>
                 <h2 className="section-title" style={{ marginTop: 0 }}>Track Compliance Evolution Over Time</h2>
-                <div className="toolbar" style={{ marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "16px", flexWrap: "wrap" }}>
-                  <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div className="toolbar toolbar--chart">
+                  <div className="toolbar-item-group">
                     <div className="chip-group">
                       <button
                         className="chip"
@@ -1014,7 +1020,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
                       </button>
                     </div>
                   </div>
-                  <div className="toolbar-item-group" style={{ display: "flex", alignItems: "center", gap: "8px", borderLeft: "1px solid #e2e8f0", paddingLeft: "16px" }}>
+                  <div className="toolbar-item-group toolbar-item-group--divided">
                     <span style={{ fontSize: "14px", fontWeight: "500", color: "#475569" }}>States:</span>
                     <div className="chip-group">
                       {AVAILABLE_STATES.map(s => {
@@ -1185,8 +1191,24 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
             )}
           </div>
 
-          {/* RIGHT SIDE: Filters */}
-          <div style={{ flex: "1 1 0%", maxWidth: "340px", minWidth: 0 }}>
+          {/* Filters: right column on wide screens, collapsible bar above on small ones */}
+          <div className={`trends-filters${filtersOpen ? " trends-filters--open" : ""}`}>
+            <button
+              type="button"
+              className="trends-filters__toggle"
+              aria-expanded={filtersOpen}
+              aria-controls="trends-filters-body"
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              <span>
+                {viewMode === "table" ? "Table filters" : "Chart filters"}
+                {activeSeries.length > 0 && (
+                  <span className="trends-filters__count">{activeSeries.length}</span>
+                )}
+              </span>
+              <span className="trends-filters__chevron" aria-hidden="true">▾</span>
+            </button>
+            <div id="trends-filters-body" className="trends-filters__body">
             <ChartSchemaFilterPanel
               seriesOptions={seriesOptions}
               selectedSeries={activeSeries}
@@ -1210,6 +1232,7 @@ const ReasonTrendsChart = memo(function ReasonTrendsChart({
               expandedCategories={expandedCategories}
               setExpandedCategories={setExpandedCategories}
             />
+            </div>
           </div>
 
         </div>

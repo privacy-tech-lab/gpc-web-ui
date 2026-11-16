@@ -115,7 +115,7 @@ export default function ChartSchemaFilterPanel({
           <Tooltip content={COMPLIANCE_SECTION_DESCRIPTION} position="top">
             <h4 style={SECTION_TITLE_STYLE}>Compliance Results</h4>
           </Tooltip>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
+          <div className="csfp__specials-list">
             {specialOptions.map((opt) => {
               const active = selectedSet.has(opt.key);
               

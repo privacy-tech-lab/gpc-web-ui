@@ -270,6 +270,39 @@ const getArrayParam = (keys, fallback) => {
   return fallback;
 };
 
+const OVERVIEW_CARDS = [
+  {
+    id: "trends",
+    Icon: ChartIcon,
+    title: "Trends Chart",
+    bullets: [
+      "Track historical GPC compliance trends over time",
+      "Compare response rates across US states (CA, CT, CO, NJ/NY)",
+      "Filter graphs by compliance status or violation reasons",
+    ],
+  },
+  {
+    id: "gpp",
+    Icon: PieIcon,
+    title: "GPC Breakdown",
+    bullets: [
+      "Compare privacy compliance before and after GPC signals",
+      "Examine GPP string segments and US Privacy Strings (USPS)",
+      "Monitor changes in Optanon / OneTrust consent cookies",
+    ],
+  },
+  {
+    id: "table",
+    Icon: TableIcon,
+    title: "Data Table",
+    bullets: [
+      "Search and query specific site URLs across datasets",
+      "Customize visible columns for targeted research",
+      "Export custom-filtered web crawl data to CSV format",
+    ],
+  },
+];
+
 function App() {
   const hasSearchDeepLink = Boolean(getParam(["search", "url", "domain", "site"], ""));
   const [viewMode, setViewMode] = useState(() => (hasSearchDeepLink ? "table" : "graph"));
@@ -958,10 +991,10 @@ function App() {
     <div className="table-section-view">
       <h2 className="section-title" style={{ marginTop: 0 }}>Filter GPC Web Crawler Data</h2>
 
-      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap", marginBottom: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div className="table-controls">
+        <div className="table-controls__field">
           <label htmlFor="state-select">State:</label>
-          <div style={{ position: "relative", display: "inline-block" }}>
+          <div className="table-controls__select-wrap">
             {selectedState === "NJ_NY" && (
               <span
                 title="There is a known issue with this state's data"
@@ -994,7 +1027,7 @@ function App() {
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="table-controls__field">
           <label htmlFor="time-period-select">Time Period:</label>
           <select
             id="time-period-select"
@@ -1012,7 +1045,7 @@ function App() {
           </select>
         </div>
 
-        <div style={{ marginLeft: "auto", display: "flex", gap: "12px", alignItems: "center" }}>
+        <div className="table-controls__actions">
           <Tooltip content="Choose which columns to show or hide in the dataset table" position="top">
             <button
               ref={pickerBtnRef}
@@ -1035,53 +1068,27 @@ function App() {
         </div>
       </div>
 
-     <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", marginBottom: "20px" }}>
-  <div style={{
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "4px 10px",
-    backgroundColor: "#f8fafc",
-    border: "1px solid #e2e8f0",
-    borderRadius: "6px",
-    whiteSpace: "nowrap",
-    flexShrink: 0
-  }}>
-    <span style={{ fontSize: "14px", fontWeight: "700", color: "#0f172a" }}>
-      {totalItems.toLocaleString()}
-    </span>
-    <span style={{ fontSize: "13px", fontWeight: "400", color: "#475569" }}>
-      Sites (after filters)
-    </span>
-  </div>
+      <div className="table-search-row">
+        <div className="table-count-badge">
+          <strong>{totalItems.toLocaleString()}</strong>
+          <span>Sites (after filters)</span>
+        </div>
 
-  <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
-    <label 
-      htmlFor="url-search" 
-      style={{ 
-        whiteSpace: "nowrap", 
-        fontSize: "14px", 
-        fontWeight: "400", 
-        color: "#334155",
-        flexShrink: 0 
-      }}
-    >
-      Search URL:
-    </label>
-    <input
-      id="url-search"
-      type="text"
-      placeholder="e.g., example.com"
-      value={searchQuery}
-      onChange={(e) => {
-        setCurrentPage(1);
-        setSearchQuery(e.target.value);
-      }}
-      className="input"
-      style={{ flex: 1, width: "100%", height: "32px", padding: "4px 10px", fontSize: "14px", boxSizing: "border-box" }}
-    />
-  </div>
-</div>
+        <div className="table-search">
+          <label htmlFor="url-search">Search URL:</label>
+          <input
+            id="url-search"
+            type="text"
+            placeholder="e.g., example.com"
+            value={searchQuery}
+            onChange={(e) => {
+              setCurrentPage(1);
+              setSearchQuery(e.target.value);
+            }}
+            className="input"
+          />
+        </div>
+      </div>
       {schemaParseErrorCount > 0 && (
         <div className="notice-card notice-card--warning" role="status">
           Ignored invalid schema classifications in {schemaParseErrorCount} row
@@ -1098,8 +1105,8 @@ function App() {
           aria-label="Toggle columns"
           style={{ position: "absolute", zIndex: 100, width: "100%", boxSizing: "border-box" }}
         >
-          <div className="column-picker-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-            <strong style={{ fontSize: "18px", color: "#0f172a", fontWeight: "700" }}>Select columns to display</strong>
+          <div className="column-picker-header">
+            <strong className="column-picker__title">Select columns to display</strong>
             <div className="column-picker-actions" style={{ display: "flex", gap: "8px" }}>
               <Tooltip content="Select and show all table columns" position="top">
                 <button
@@ -1150,12 +1157,7 @@ function App() {
                     {cat.name}
                   </div>
                 </Tooltip>
-                <div className="column-grid" style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, 220px)",
-                  justifyContent: "start",
-                  gap: "10px"
-                }}>
+                <div className="column-grid column-picker__grid">
                   {cat.columns.map((column) => {
                     const checked = visibleColumns.includes(column);
                     const id = `col-${column.replace(/\s+/g, "-")}`;
@@ -1169,22 +1171,6 @@ function App() {
                         <label
                           htmlFor={id}
                           className="column-item"
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            width: "220px",
-                            height: "40px",
-                            padding: "8px 12px",
-                            border: "1px solid #cbd5e1",
-                            borderRadius: "8px",
-                            backgroundColor: "#ffffff",
-                            cursor: "pointer",
-                            fontSize: "14px",
-                            color: "#1e293b",
-                            boxSizing: "border-box",
-                            transition: "border-color 0.15s ease"
-                          }}
                         >
                           <input
                             id={id}
@@ -1201,11 +1187,7 @@ function App() {
                             }}
                             style={{ margin: 0, cursor: "pointer", width: "16px", height: "16px", flexShrink: 0 }}
                           />
-                          <span style={{
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis"
-                          }}>
+                          <span className="column-picker__label">
                             {displayName}
                           </span>
                         </label>
@@ -1233,110 +1215,13 @@ function App() {
     <div className="app-layout">
       <SideNav activeSectionId={activeSectionId} onNavigate={goToSection} />
       <div className="app-container">
-        <style>{`
-          html, body, #root {
-            margin: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            box-sizing: border-box !important;
-          }
-
-          .app-layout {
-            display: flex !important;
-            width: 100% !important;
-            min-height: 100vh !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow-x: hidden !important;
-          }
-
-          .side-nav {
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            height: 100vh !important;
-            width: 60px !important;
-            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            overflow-x: hidden !important;
-            z-index: 1000 !important;
-            box-sizing: border-box !important;
-          }
-
-          .side-nav.side-nav--expanded,
-          .side-nav--expanded {
-            width: 260px !important;
-            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.15) !important;
-          }
-
-          .app-container {
-            flex: 1 1 auto !important;
-            min-width: 0 !important;
-            box-sizing: border-box !important;
-            padding: 24px !important;
-            margin-left: 60px !important;
-          }
-
-          #table-scroll table {
-            width: 100%;
-            border-collapse: collapse;
-          }
-          #table-scroll th {
-            padding: 6px 12px;
-            text-align: left;
-          }
-          #table-scroll td {
-            padding: 4px 12px;
-            max-width: 260px;
-            min-width: 140px;
-            position: relative;
-            box-sizing: border-box;
-            vertical-align: top;
-          }
-          #table-scroll td.col-sticky {
-            position: sticky;
-          }
-          #table-scroll td .cell-content {
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: normal;
-            max-width: 100%;
-            line-height: 1.3em;
-            max-height: 2.6em;
-          }
-          #table-scroll table.table--sparse td .cell-content {
-            display: block;
-            -webkit-line-clamp: unset;
-            overflow: visible;
-            max-height: none;
-          }
-          #table-scroll table:not(.table--sparse) td:hover .cell-content {
-            display: block;
-            -webkit-line-clamp: unset;
-            overflow: visible;
-            max-height: none;
-            background: #f8fafc;
-            border-radius: 4px;
-          }
-          .hero-title-wrapper {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 12px;
-          }
-        `}</style>
-
         <div className="hero-title-wrapper" id="page-top">
-          <h1 style={{ margin: 0, color: "#0f172a", fontSize: "32px", fontWeight: "800" }}>GPC Compliance Data</h1>
+          <h1 className="page-title">GPC Compliance Data</h1>
         </div>
 
         {showOverview && (
-          <div className="hero" id="section-overview" style={{ color: "#0f172a" }}>
-            <p className="intro" style={{ color: "#0f172a", fontSize: "16px", lineHeight: "1.6" }}>
+          <div className="hero" id="section-overview">
+            <p className="intro">
               The GPC Web Crawler analyzes websites&apos; compliance with{" "}
               <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Global Privacy Control (GPC)</a>{" "}
               at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
@@ -1345,161 +1230,27 @@ function App() {
               To track the evolution of GPC compliance on the web over time we are performing regular crawls of a set of 11,708 websites.
             </p>
 
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", 
-              gap: "24px", 
-              marginTop: "28px" 
-            }}>
-              <button 
-                onClick={() => goToSection("trends")} 
-                className="card" 
-                style={{ 
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: "18px",
-                  cursor: "pointer", 
-                  textAlign: "left", 
-                  background: "#ffffff", 
-                  border: "1px solid #cbd5e1", 
-                  borderRadius: "12px", 
-                  padding: "28px", 
-                  boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
-                  transition: "transform 0.2s, box-shadow 0.2s",
-                  width: "100%",
-                  boxSizing: "border-box"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translateY(-3px)";
-                  e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "none";
-                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
-                }}
-              >
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#f1f5f9",
-                  color: "#0f172a",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  flexShrink: 0
-                }}>
-                  <ChartIcon />
-                </div>
-                <div>
-                  <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Trends Chart</h3>
-                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
-                    <li>Track historical GPC compliance trends over time</li>
-                    <li>Compare response rates across US states (CA, CT, CO, NJ/NY)</li>
-                    <li>Filter graphs by compliance status or violation reasons</li>
-                  </ul>
-                </div>
-              </button>
-
-              <button 
-                onClick={() => goToSection("gpp")} 
-                className="card" 
-                style={{ 
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: "18px",
-                  cursor: "pointer", 
-                  textAlign: "left", 
-                  background: "#ffffff", 
-                  border: "1px solid #cbd5e1", 
-                  borderRadius: "12px", 
-                  padding: "28px", 
-                  boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
-                  transition: "transform 0.2s, box-shadow 0.2s",
-                  width: "100%",
-                  boxSizing: "border-box"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translateY(-3px)";
-                  e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "none";
-                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
-                }}
-              >
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#f1f5f9",
-                  color: "#0f172a",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  flexShrink: 0
-                }}>
-                  <PieIcon />
-                </div>
-                <div>
-                  <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>GPC Breakdown</h3>
-                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
-                    <li>Compare privacy compliance before and after GPC signals</li>
-                    <li>Examine GPP string segments and US Privacy Strings (USPS)</li>
-                    <li>Monitor changes in Optanon / OneTrust consent cookies</li>
-                  </ul>
-                </div>
-              </button>
-
-              <button 
-                onClick={() => goToSection("table")} 
-                className="card" 
-                style={{ 
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: "18px",
-                  cursor: "pointer", 
-                  textAlign: "left", 
-                  background: "#ffffff", 
-                  border: "1px solid #cbd5e1", 
-                  borderRadius: "12px", 
-                  padding: "28px", 
-                  boxShadow: "0 2px 5px rgba(0,0,0,0.06)",
-                  transition: "transform 0.2s, box-shadow 0.2s",
-                  width: "100%",
-                  boxSizing: "border-box"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translateY(-3px)";
-                  e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.12)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "none";
-                  e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.06)";
-                }}
-              >
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#f1f5f9",
-                  color: "#0f172a",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  flexShrink: 0
-                }}>
-                  <TableIcon />
-                </div>
-                <div>
-                  <h3 style={{ margin: "0 0 12px 0", color: "#0f172a", fontSize: "22px", fontWeight: "800" }}>Data Table</h3>
-                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px", color: "#1e293b", lineHeight: "1.6" }}>
-                    <li>Search and query specific site URLs across datasets</li>
-                    <li>Customize visible columns for targeted research</li>
-                    <li>Export custom-filtered web crawl data to CSV format</li>
-                  </ul>
-                </div>
-              </button>
+            <div className="overview-grid">
+              {OVERVIEW_CARDS.map(({ id, Icon, title, bullets }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => goToSection(id)}
+                  className="card overview-card"
+                >
+                  <div className="overview-card__icon">
+                    <Icon />
+                  </div>
+                  <div>
+                    <h3 className="overview-card__title">{title}</h3>
+                    <ul className="overview-card__list">
+                      {bullets.map((b) => (
+                        <li key={b}>{b}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </button>
+              ))}
             </div>
 
             <footer style={{ marginTop: "60px", paddingTop: "16px", borderTop: "1px solid #e2e8f0", textAlign: "center", fontSize: "12px", color: "#64748b" }}>

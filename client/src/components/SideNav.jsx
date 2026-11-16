@@ -70,9 +70,13 @@ const NAV_ITEMS = [
 
 export default function SideNav({ activeSectionId, onNavigate }) {
     const [hovering, setHovering] = useState(false);
-    const open = hovering;
+    // Pinned open by tapping/clicking the menu icon (touch screens have no hover).
+    const [pinned, setPinned] = useState(false);
+    const open = hovering || pinned;
 
     function handleNavigate(id) {
+        setPinned(false);
+        setHovering(false);
         onNavigate(id);
     }
 
@@ -83,9 +87,15 @@ export default function SideNav({ activeSectionId, onNavigate }) {
             onMouseEnter={() => setHovering(true)}
             onMouseLeave={() => setHovering(false)}
         >
-            <span className="side-nav__toggle" aria-hidden="true">
+            <button
+                type="button"
+                className="side-nav__toggle"
+                aria-label="Toggle navigation menu"
+                aria-expanded={open}
+                onClick={() => setPinned((p) => !p)}
+            >
                 <HamburgerIcon />
-            </span>
+            </button>
 
             <ul className="side-nav__list">
                 {NAV_ITEMS.map(({ id, label, description, Icon }) => (
