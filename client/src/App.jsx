@@ -650,11 +650,17 @@ function App() {
   }, [headers, rows]);
 
   useEffect(() => {
-    if (displayHeaders.includes("Compliance Result")) {
-      setVisibleColumns(["Compliance Result"]);
-    } else if (displayHeaders.length > 0) {
-      setVisibleColumns([displayHeaders[0]]);
-    }
+    if (displayHeaders.length === 0) return;
+    const defaultColumns = displayHeaders.includes("Compliance Result")
+      ? ["Compliance Result"]
+      : [displayHeaders[0]];
+    // Keep the user's column selection across state/period switches; drop
+    // columns missing from the new dataset, and fall back to the default
+    // only on first load or if nothing valid remains.
+    setVisibleColumns((prev) => {
+      const valid = prev.filter((c) => displayHeaders.includes(c));
+      return valid.length > 0 ? valid : defaultColumns;
+    });
   }, [displayHeaders]);
 
   const hasSchemaColumn = displayHeaders.includes(SCHEMA_CLASSIFICATION_COLUMN);
