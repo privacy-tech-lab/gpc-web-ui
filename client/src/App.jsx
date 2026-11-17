@@ -1228,7 +1228,9 @@ function App() {
         {showOverview && (
           <div className="hero" id="section-overview">
             <p className="intro">
-              The GPC Web Crawler analyzes websites&apos; compliance with{" "}
+              The{" "}
+              <a href="https://github.com/privacy-tech-lab/gpc-web-crawler" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>GPC Web Crawler</a>{" "}
+              analyzes websites&apos; compliance with{" "}
               <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Global Privacy Control (GPC)</a>{" "}
               at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
               The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Selenium</a>{" "}
