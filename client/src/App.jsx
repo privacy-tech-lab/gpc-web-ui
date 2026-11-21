@@ -650,11 +650,17 @@ function App() {
   }, [headers, rows]);
 
   useEffect(() => {
-    if (displayHeaders.includes("Compliance Result")) {
-      setVisibleColumns(["Compliance Result"]);
-    } else if (displayHeaders.length > 0) {
-      setVisibleColumns([displayHeaders[0]]);
-    }
+    if (displayHeaders.length === 0) return;
+    const defaultColumns = displayHeaders.includes("Compliance Result")
+      ? ["Compliance Result"]
+      : [displayHeaders[0]];
+    // Keep the user's column selection across state/period switches; drop
+    // columns missing from the new dataset, and fall back to the default
+    // only on first load or if nothing valid remains.
+    setVisibleColumns((prev) => {
+      const valid = prev.filter((c) => displayHeaders.includes(c));
+      return valid.length > 0 ? valid : defaultColumns;
+    });
   }, [displayHeaders]);
 
   const hasSchemaColumn = displayHeaders.includes(SCHEMA_CLASSIFICATION_COLUMN);
@@ -1222,7 +1228,9 @@ function App() {
         {showOverview && (
           <div className="hero" id="section-overview">
             <p className="intro">
-              The GPC Web Crawler analyzes websites&apos; compliance with{" "}
+              The{" "}
+              <a href="https://github.com/privacy-tech-lab/gpc-web-crawler" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>GPC Web Crawler</a>{" "}
+              analyzes websites&apos; compliance with{" "}
               <a href="https://globalprivacycontrol.org/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Global Privacy Control (GPC)</a>{" "}
               at scale. GPC is a privacy preference signal that people can use to exercise their rights to opt out from web tracking.
               The GPC Web Crawler is based on <a href="https://www.selenium.dev/" target="_blank" rel="noreferrer noopener" style={{ color: "#0369a1", fontWeight: "600" }}>Selenium</a>{" "}
