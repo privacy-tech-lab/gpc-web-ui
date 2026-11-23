@@ -1,5 +1,5 @@
-import Papa from "papaparse";
 import datasetsManifest from "../generated/datasets.json";
+import { openParquet } from "./parquetData.js";
 import {
   SCHEMA_CLASSIFICATION_COLUMN,
   getSchemaClassificationForRow,
@@ -8,17 +8,43 @@ import {
 
 export const datasetCache = new Map();
 const fetchPromises = new Map();
+const parquetHandles = new Map(); // cacheKey -> opened Parquet file (for late column loads)
+const pendingColumnLoads = new Map(); // `${cacheKey}|${column}` -> Promise
 
-function normalizeRow(row) {
-  const normalized = {};
-  Object.keys(row || {}).forEach((key) => {
-    let trimmedKey = String(key).trim();
-    if (trimmedKey === "site_isnull" || trimmedKey.toLowerCase() === "site id") {
-      if (trimmedKey === "site_isnull") trimmedKey = "Site Is Null";
+/**
+ * Columns that are large (tens of KB per row) and only matter when the user
+ * adds them to the table. They are NOT downloaded or parsed with the dataset;
+ * `ensureColumns` fetches them on demand. Everything else loads up front,
+ * because the charts and filters depend on it.
+ * To load a column eagerly again, just remove it from this list.
+ */
+export const DEFERRED_COLUMNS = new Set([
+  "urlClassification",
+  "third_party_urls",
+  "unique_ad_networks",
+]);
+
+export const isDeferredColumn = (column) => DEFERRED_COLUMNS.has(column);
+
+// Raw file column -> name used in the app. (The CSV pipeline did this rename too.)
+const RENAMED_COLUMNS = { site_isnull: "Site Is Null" };
+const displayName = (column) => RENAMED_COLUMNS[column] ?? column;
+const fileName = (column) =>
+  Object.keys(RENAMED_COLUMNS).find((raw) => RENAMED_COLUMNS[raw] === column) ?? column;
+
+/** Reads columns and returns row objects keyed by the app's column names. */
+async function readRows(handle, fileColumns) {
+  const rows = await handle.readColumns(fileColumns);
+  const renames = fileColumns.filter((column) => column in RENAMED_COLUMNS);
+  if (renames.length > 0) {
+    for (const row of rows) {
+      for (const raw of renames) {
+        row[RENAMED_COLUMNS[raw]] = row[raw];
+        delete row[raw];
+      }
     }
-    normalized[trimmedKey] = row[key];
-  });
-  return normalized;
+  }
+  return rows;
 }
 
 /**
@@ -78,29 +104,18 @@ export async function loadDataset(state, periodEntry) {
     return fetchPromises.get(cacheKey);
   }
 
-  const filePath = `/${state}/${periodEntry.file}`;
+  const filePath = `/${state}/${encodeURIComponent(periodEntry.file)}`;
 
   const promise = (async () => {
     try {
-      const response = await fetch(filePath);
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${filePath}`);
-      const text = await response.text();
+      const handle = await openParquet(filePath);
 
-      const parsed = await new Promise((resolve, reject) => {
-        Papa.parse(text, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (res) => resolve(res),
-          error: (err) => reject(err),
-        });
-      });
+      // `headers` lists every column (so the column picker shows them all),
+      // but deferred columns are not read yet.
+      const headers = handle.columns.map(displayName);
+      const eagerColumns = handle.columns.filter((column) => !isDeferredColumn(column));
 
-      const headers = (parsed.meta?.fields || []).map((field) => {
-        const trimmed = String(field).trim();
-        return trimmed === "site_isnull" ? "Site Is Null" : trimmed;
-      });
-
-      const rows = (parsed.data || []).map(normalizeRow);
+      const rows = await readRows(handle, eagerColumns);
       const hasSchemaColumn = headers.includes(SCHEMA_CLASSIFICATION_COLUMN);
 
       const allRecords = rows.map((row) => ({
@@ -125,8 +140,11 @@ export async function loadDataset(state, periodEntry) {
         nullRows,
         hasSchemaColumn,
         summary,
+        // Columns present on every row object (grows as deferred columns load).
+        loadedColumns: new Set(eagerColumns.map(displayName)),
       };
 
+      parquetHandles.set(cacheKey, handle);
       datasetCache.set(cacheKey, result);
       return result;
     } finally {
@@ -136,6 +154,42 @@ export async function loadDataset(state, periodEntry) {
 
   fetchPromises.set(cacheKey, promise);
   return promise;
+}
+
+/**
+ * Loads deferred columns into an already-loaded dataset, in place: each row
+ * object in `dataset.rows` gains the new keys (rows and allRecords share the
+ * same row objects, so everything sees them). Resolves to true if any requested
+ * column became available during this call, so the caller knows to re-render.
+ */
+export async function ensureColumns(state, periodEntry, columns) {
+  const dataset = await loadDataset(state, periodEntry);
+  const cacheKey = `${state}_${periodEntry?.key}`;
+  const handle = parquetHandles.get(cacheKey);
+  if (!dataset || !handle) return false;
+
+  const needed = columns.filter(
+    (column) => handle.columns.includes(fileName(column)) && !dataset.loadedColumns.has(column),
+  );
+  if (needed.length === 0) return false;
+
+  // Start one read for everything nobody is already loading.
+  const toStart = needed.filter((column) => !pendingColumnLoads.has(`${cacheKey}|${column}`));
+  if (toStart.length > 0) {
+    const load = (async () => {
+      const extra = await readRows(handle, toStart.map(fileName));
+      for (let i = 0; i < dataset.rows.length; i++) {
+        for (const column of toStart) dataset.rows[i][column] = extra[i][column];
+      }
+      for (const column of toStart) dataset.loadedColumns.add(column);
+    })().finally(() => {
+      for (const column of toStart) pendingColumnLoads.delete(`${cacheKey}|${column}`);
+    });
+    for (const column of toStart) pendingColumnLoads.set(`${cacheKey}|${column}`, load);
+  }
+
+  await Promise.all(needed.map((column) => pendingColumnLoads.get(`${cacheKey}|${column}`)));
+  return true;
 }
 
 let preloadingStarted = false;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, memo } from "react";
-import Papa from "papaparse";
+import datasetsManifest from "../generated/datasets.json";
+import { loadDataset } from "../utils/datasetCache.js";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -505,49 +506,46 @@ const BeforeAfterBreakdown = memo(function BeforeAfterBreakdown({ timePeriods, s
   const [loadError, setLoadError] = useState("");
   const chartRef = useRef(null);
 
-  // Dynamic concurrent CSV fetching
+  // Concurrent dataset loading. Uses the shared dataset cache (the same Parquet
+  // files the trends chart and table use), so each period is downloaded once.
   useEffect(() => {
     if (!selectedState || selectedPeriods.length === 0) {
       setRows([]);
       setLoading(false);
       return;
     }
-    
+
+    let cancelled = false;
     setLoading(true);
     setLoadError("");
 
-    // Create a fetch promise for a single period
-    const fetchPeriod = (period) => {
-      return new Promise((resolve, reject) => {
-        const path = `/${selectedState}/Crawl_Data_${selectedState} - ${period}.csv`;
-        Papa.parse(path, {
-          download: true,
-          header: true,
-          skipEmptyLines: true,
-          complete: ({ data }) => {
-            // Tag each row with '_period' so we can group them during tallying
-            const taggedData = data.map((row) => {
-              const out = { _period: period }; 
-              Object.keys(row ?? {}).forEach((k) => { out[String(k).trim()] = row[k]; });
-              return out;
-            });
-            resolve(taggedData);
-          },
-          error: (err) => reject(new Error(`${period}: ${err.message}`))
-        });
-      });
+    const loadPeriod = async (period) => {
+      const entry = (datasetsManifest.periodsByState[selectedState] || []).find(
+        (candidate) => candidate.key === period,
+      );
+      if (!entry) throw new Error(`no ${selectedState} dataset for ${period}`);
+      const dataset = await loadDataset(selectedState, entry);
+      // Tag each row with '_period' so we can group them during tallying.
+      // Copy the row so the shared cached row objects are left untouched.
+      return dataset.rows.map((row) => ({ ...row, _period: period }));
     };
 
-    // Execute all fetches concurrently and flatten the results into one master array
-    Promise.all(selectedPeriods.map(fetchPeriod))
+    // Execute all loads concurrently and flatten the results into one master array
+    Promise.all(selectedPeriods.map(loadPeriod))
       .then((results) => {
+        if (cancelled) return;
         setRows(results.flat());
         setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         setLoadError(`Failed to load data: ${err.message}`);
         setLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedState, selectedPeriods]);
 
   // ── 5c. Tally Computation Selectors ────────────────────────────────────────

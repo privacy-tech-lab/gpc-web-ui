@@ -4,7 +4,13 @@ import "./App.css";
 import ReasonTrendsChart from "./ReasonTrendsChart.jsx";
 import NJIssuePage from "./components/NJIssuePage.jsx";
 import SideNav from "./components/SideNav.jsx";
-import { loadDataset, preloadAllDatasets, datasetCache } from "./utils/datasetCache.js";
+import {
+  loadDataset,
+  preloadAllDatasets,
+  datasetCache,
+  ensureColumns,
+  isDeferredColumn,
+} from "./utils/datasetCache.js";
 import { formatStateLabel, crawlStateToGppState } from "./utils/stateLabels.js";
 
 const BeforeAfterBreakdown = lazy(
@@ -124,37 +130,26 @@ import datasetsManifest from "./generated/datasets.json";
 
 const PAGE_SIZE = 10;
 
-const TIME_PERIODS = [
-  { key: "Dec2023", label: "December 2023" },
-  { key: "Feb2024", label: "February 2024" },
-  { key: "Apr2024", label: "April 2024" },
-  { key: "Jun2024", label: "June 2024" },
-  { key: "FebMar2025", label: "Feb-Mar 2025" },
-  { key: "May2025", label: "May 2025" },
-  { key: "AugSeptOct2025", label: "Aug-Oct 2025" },
-  { key: "Jan2026", label: "January 2026" },
-  { key: "Feb2026", label: "February 2026" },
-  { key: "Apr2026", label: "April 2026" },
-  { key: "AugSep2026", label: "Aug-Sep 2026" },
-];
+// Both lists are derived from the datasets found in public/ (via the generated
+// src/generated/datasets.json), so adding a crawl never requires editing this file.
+const STATE_MONTHS = Object.fromEntries(
+  Object.entries(datasetsManifest.periodsByState).map(([state, periods]) => [
+    state,
+    periods.map((period) => period.key),
+  ]),
+);
 
-const STATE_MONTHS = {
-  CA: [
-    "Dec2023",
-    "Feb2024",
-    "Apr2024",
-    "Jun2024",
-    "FebMar2025",
-    "May2025",
-    "AugSeptOct2025",
-    "Jan2026",
-    "Apr2026",
-    "AugSep2026",
-  ],
-  CT: ["FebMar2025", "May2025", "AugSeptOct2025", "Feb2026", "Apr2026", "AugSep2026"],
-  CO: ["FebMar2025", "May2025", "AugSeptOct2025", "Jan2026", "Apr2026", "AugSep2026"],
-  NJ_NY: ["AugSeptOct2025", "Feb2026", "Apr2026", "AugSep2026"],
-};
+const TIME_PERIODS = (() => {
+  const byKey = new Map();
+  for (const periods of Object.values(datasetsManifest.periodsByState)) {
+    for (const period of periods) {
+      if (!byKey.has(period.key)) byKey.set(period.key, period);
+    }
+  }
+  return [...byKey.values()]
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ key, label }) => ({ key, label }));
+})();
 
 const CATEGORY_DESCRIPTIONS = {
   compliance: "Shows whether a website honors privacy signals and explains any compliance issues.",
@@ -169,16 +164,10 @@ const AVAILABLE_STATES = datasetsManifest.states;
 const DEFAULT_STATE = AVAILABLE_STATES.includes("CA")
   ? "CA"
   : (AVAILABLE_STATES[0] ?? "CA");
-const PREFERRED_PERIOD_KEY = "AugSep2026";
-
-/** Preferred default period for a state, falling back to its latest period. */
+/** Default period for a state: its most recent crawl (periods are sorted chronologically). */
 function getDefaultPeriodKey(state) {
   const periods = datasetsManifest.periodsByState[state] || [];
-  return (
-    periods.find((period) => period.key === PREFERRED_PERIOD_KEY)?.key ??
-    periods.at(-1)?.key ??
-    ""
-  );
+  return periods.at(-1)?.key ?? "";
 }
 
 const DEFAULT_PERIOD = getDefaultPeriodKey(DEFAULT_STATE);
@@ -309,6 +298,8 @@ function App() {
   const [showOverview, setShowOverview] = useState(() => !hasSearchDeepLink);
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
+  // Bumped when deferred (very large) columns finish loading into the cached rows.
+  const [columnsVersion, setColumnsVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentPage, setCurrentPage] = useState(() => {
@@ -687,6 +678,22 @@ function App() {
     return cols;
   }, [visibleColumns, displayHeaders]);
 
+  // Very large columns (see DEFERRED_COLUMNS) are only downloaded once shown in the table.
+  useEffect(() => {
+    if (!currentPeriodEntry) return;
+    const deferred = visibleTableColumns.filter(isDeferredColumn);
+    if (deferred.length === 0) return;
+    let cancelled = false;
+    ensureColumns(selectedState, currentPeriodEntry, deferred)
+      .then((changed) => {
+        if (changed && !cancelled) setColumnsVersion((version) => version + 1);
+      })
+      .catch((err) => console.warn("Failed to load table columns:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleTableColumns, selectedState, currentPeriodEntry]);
+
   const firstStickyColumn = useMemo(() => {
     const columns = Array.isArray(visibleTableColumns) && visibleTableColumns.length > 0 ? visibleTableColumns : displayHeaders;
     return columns.length > 0 ? columns[0] : undefined;
@@ -799,7 +806,7 @@ function App() {
         .map(({ record }) => record);
     }
     return base;
-  }, [rowRecords, schemaModeUnavailable, searchQuery, tableSelectedSeries, sortConfig]);
+  }, [rowRecords, schemaModeUnavailable, searchQuery, tableSelectedSeries, sortConfig, columnsVersion]);
 
   const handleSortColumn = (column) => {
     setSortConfig((prev) =>
@@ -820,8 +827,9 @@ function App() {
 
   const pageRows = useMemo(() => filteredRows.slice(startIndex, endIndex), [filteredRows, startIndex, endIndex]);
 
-  const handleExportFiltered = () => {
+  const handleExportFiltered = async () => {
     try {
+      await ensureColumns(selectedState, currentPeriodEntry, visibleTableColumns.filter(isDeferredColumn));
       const data = filteredRows.map((row) => 
         visibleTableColumns.map((header) => {
           if (row) {
@@ -846,7 +854,7 @@ function App() {
     if (loading) {
       return (
         <div id="table-wrapper" role="status" aria-live="polite" style={{ padding: 16 }}>
-          <h2>Loading CSV...</h2>
+          <h2>Loading data...</h2>
           <p>Fetching configuration and data.</p>
         </div>
       );
@@ -959,6 +967,7 @@ function App() {
                         cellValue = getSchemaClassificationForRow(row)?.complianceResult || "";
                       } else {
                         cellValue = row[header];
+                        if (cellValue === undefined && isDeferredColumn(header)) cellValue = "Loading…";
                       }
                     }
 
