@@ -6,9 +6,20 @@ import { fileURLToPath } from "node:url";
 // (NJ_NY: NJ crawl collected from a NY-geolocated IP).
 const STATE_CODE = "[A-Z]{2}(?:_[A-Z]{2})?";
 const STATE_DIR_PATTERN = new RegExp(`^${STATE_CODE}$`);
-const FILENAME_PATTERN = new RegExp(
-  `^Crawl_Data_(?<state>${STATE_CODE}) - (?<period>[A-Za-z0-9]+)\\.csv$`,
-);
+
+// Datasets served to the browser are Parquet. Raw CSVs are the lab's source
+// format and are converted with `npm run add-crawl` (see docs/ADDING_CRAWL_DATA.md).
+export const DATA_EXTENSION = ".parquet";
+const buildFilenamePattern = (ext) =>
+  new RegExp(`^Crawl_Data_(?<state>${STATE_CODE}) - (?<period>[A-Za-z0-9]+)\\${ext}$`);
+const FILENAME_PATTERN = buildFilenamePattern(DATA_EXTENSION);
+const CSV_FILENAME_PATTERN = buildFilenamePattern(".csv");
+
+/** Parses "Crawl_Data_CA - May2026.csv" -> { state: "CA", period: "May2026" }, or null. */
+export function parseCrawlFilename(name, ext = ".csv") {
+  const match = name.match(ext === DATA_EXTENSION ? FILENAME_PATTERN : CSV_FILENAME_PATTERN);
+  return match ? { state: match.groups.state, period: match.groups.period } : null;
+}
 
 const PNC_PREFIX = "PotentiallyNonCompliantSites";
 
@@ -86,8 +97,19 @@ export function buildManifest(publicDir) {
 
   for (const state of stateDirs) {
     const stateDir = join(publicDir, state);
-    const files = readdirSync(stateDir).filter((name) => name.endsWith(".csv"));
+    const allFiles = readdirSync(stateDir);
+    const files = allFiles.filter((name) => name.endsWith(DATA_EXTENSION));
     const byCanonicalKey = new Map();
+
+    // A raw CSV in public/ is deployed (20MB+) but never read by the app.
+    for (const name of allFiles) {
+      if (CSV_FILENAME_PATTERN.test(name) && !name.includes(PNC_PREFIX)) {
+        warnings.push(
+          `[dataset-manifest] ${state}/${name} is a raw CSV and is ignored. ` +
+            `Move it to crawl-data/ and run: npm run add-crawl`,
+        );
+      }
+    }
 
     for (const file of files) {
       if (file.includes(PNC_PREFIX)) continue;
@@ -125,25 +147,39 @@ export function buildManifest(publicDir) {
   };
 }
 
+const here = dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_PUBLIC_DIR = resolve(here, "..", "public");
+export const DEFAULT_MANIFEST_FILE = resolve(here, "..", "src", "generated", "datasets.json");
+
+/** Rebuilds src/generated/datasets.json from public/. Returns the manifest. */
+export function writeManifest({
+  publicDir = DEFAULT_PUBLIC_DIR,
+  outFile = DEFAULT_MANIFEST_FILE,
+  logger,
+} = {}) {
+  const log = logger ?? console;
+  const manifest = buildManifest(publicDir);
+  for (const warning of manifest.warnings) log.warn(warning);
+
+  const next =
+    JSON.stringify(
+      { states: manifest.states, periodsByState: manifest.periodsByState },
+      null,
+      2,
+    ) + "\n";
+  mkdirSync(dirname(outFile), { recursive: true });
+  if (!existsSync(outFile) || readFileSync(outFile, "utf8") !== next) {
+    writeFileSync(outFile, next);
+  }
+  return manifest;
+}
+
 export function datasetManifest({ publicDir, outFile } = {}) {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const defaultPublic = resolve(here, "..", "public");
-  const defaultOut = resolve(here, "..", "src", "generated", "datasets.json");
-  const publicPath = publicDir ?? defaultPublic;
-  const outPath = outFile ?? defaultOut;
+  const publicPath = publicDir ?? DEFAULT_PUBLIC_DIR;
+  const outPath = outFile ?? DEFAULT_MANIFEST_FILE;
 
   function regenerate(logger) {
-    const log = logger ?? console;
-    const { states, periodsByState, warnings } = buildManifest(publicPath);
-    for (const warning of warnings) log.warn(warning);
-
-    const next = JSON.stringify({ states, periodsByState }, null, 2) + "\n";
-    mkdirSync(dirname(outPath), { recursive: true });
-    if (existsSync(outPath)) {
-      const current = readFileSync(outPath, "utf8");
-      if (current === next) return;
-    }
-    writeFileSync(outPath, next);
+    writeManifest({ publicDir: publicPath, outFile: outPath, logger });
   }
 
   return {
@@ -157,7 +193,7 @@ export function datasetManifest({ publicDir, outFile } = {}) {
       watcher.add(publicPath);
       const onChange = (filePath) => {
         if (!filePath.startsWith(publicPath)) return;
-        if (!filePath.endsWith(".csv")) return;
+        if (!filePath.endsWith(DATA_EXTENSION)) return;
         try {
           regenerate(server.config.logger);
         } catch (err) {

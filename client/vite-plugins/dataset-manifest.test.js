@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { normalizePeriod, buildManifest } from "./dataset-manifest.js";
+import {
+  normalizePeriod,
+  buildManifest,
+  parseCrawlFilename,
+  writeManifest,
+} from "./dataset-manifest.js";
 
 // ─── normalizePeriod ──────────────────────────────────────────────────────────
 
@@ -40,8 +45,8 @@ test("normalizePeriod – three-month AugSeptOct2025", () => {
   });
 });
 
-test("normalizePeriod – Sep and Sept and September all collapse to Sept", () => {
-  assert.equal(normalizePeriod("Sep2025").key, "Sept2025");
+test("normalizePeriod – Sep stays distinct from Sept; Sept and September collapse", () => {
+  assert.equal(normalizePeriod("Sep2025").key, "Sep2025");
   assert.equal(normalizePeriod("Sept2025").key, "Sept2025");
   assert.equal(normalizePeriod("September2025").key, "Sept2025");
 });
@@ -74,9 +79,9 @@ function makeFixture(tree) {
 test("buildManifest – discovers states and periods, sorted chronologically", () => {
   const root = makeFixture({
     CA: [
-      "Crawl_Data_CA - May2025.csv",
-      "Crawl_Data_CA - Dec2023.csv",
-      "Crawl_Data_CA - Jan2026.csv",
+      "Crawl_Data_CA - May2025.parquet",
+      "Crawl_Data_CA - Dec2023.parquet",
+      "Crawl_Data_CA - Jan2026.parquet",
     ],
   });
   try {
@@ -93,12 +98,12 @@ test("buildManifest – discovers states and periods, sorted chronologically", (
 
 test("buildManifest – normalizes April2026 → Apr2026 and stores original filename", () => {
   const root = makeFixture({
-    NJ: ["Crawl_Data_NJ - April2026.csv"],
+    NJ: ["Crawl_Data_NJ - April2026.parquet"],
   });
   try {
     const m = buildManifest(root);
     assert.equal(m.periodsByState.NJ[0].key, "Apr2026");
-    assert.equal(m.periodsByState.NJ[0].file, "Crawl_Data_NJ - April2026.csv");
+    assert.equal(m.periodsByState.NJ[0].file, "Crawl_Data_NJ - April2026.parquet");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -106,7 +111,7 @@ test("buildManifest – normalizes April2026 → Apr2026 and stores original fil
 
 test("buildManifest – throws on duplicate canonical key within a state", () => {
   const root = makeFixture({
-    CA: ["Crawl_Data_CA - Aug2025.csv", "Crawl_Data_CA - August2025.csv"],
+    CA: ["Crawl_Data_CA - Aug2025.parquet", "Crawl_Data_CA - August2025.parquet"],
   });
   try {
     assert.throws(() => buildManifest(root), /Duplicate period "Aug2025" in CA/);
@@ -118,8 +123,8 @@ test("buildManifest – throws on duplicate canonical key within a state", () =>
 test("buildManifest – skips PotentiallyNonCompliantSites files", () => {
   const root = makeFixture({
     CA: [
-      "Crawl_Data_CA - May2025.csv",
-      "Crawl_Data_CA - PotentiallyNonCompliantSitesMay2025.csv",
+      "Crawl_Data_CA - May2025.parquet",
+      "Crawl_Data_CA - PotentiallyNonCompliantSitesMay2025.parquet",
     ],
   });
   try {
@@ -133,7 +138,7 @@ test("buildManifest – skips PotentiallyNonCompliantSites files", () => {
 
 test("buildManifest – warns on unrecognized period token and skips it", () => {
   const root = makeFixture({
-    CA: ["Crawl_Data_CA - May2025.csv", "Crawl_Data_CA - FooBar2025.csv"],
+    CA: ["Crawl_Data_CA - May2025.parquet", "Crawl_Data_CA - FooBar2025.parquet"],
   });
   try {
     const m = buildManifest(root);
@@ -147,8 +152,8 @@ test("buildManifest – warns on unrecognized period token and skips it", () => 
 
 test("buildManifest – ignores non-state directories and non-CSV files", () => {
   const root = makeFixture({
-    CA: ["Crawl_Data_CA - May2025.csv", "README.md"],
-    notes: ["Crawl_Data_XX - May2025.csv"],
+    CA: ["Crawl_Data_CA - May2025.parquet", "README.md"],
+    notes: ["Crawl_Data_XX - May2025.parquet"],
   });
   try {
     const m = buildManifest(root);
@@ -160,29 +165,30 @@ test("buildManifest – ignores non-state directories and non-CSV files", () => 
 
 // ─── Sep / Sept ───────────────────────────────────────────────────────────────
 
-test("normalizePeriod – AugSep and AugSept produce identical results", () => {
-  assert.deepEqual(normalizePeriod("AugSep2026"), normalizePeriod("AugSept2026"));
-  assert.equal(normalizePeriod("AugSep2026").key, "AugSept2026");
-  assert.equal(normalizePeriod("AugSep2026").label, "Aug-Sept 2026");
+test("normalizePeriod – AugSep and AugSept keep distinct keys (key mirrors the filename)", () => {
+  assert.equal(normalizePeriod("AugSep2026").key, "AugSep2026");
+  assert.equal(normalizePeriod("AugSep2026").label, "Aug-Sep 2026");
+  assert.equal(normalizePeriod("AugSept2026").key, "AugSept2026");
+  assert.equal(normalizePeriod("AugSept2026").label, "Aug-Sept 2026");
 });
 
-test("buildManifest – AugSep2026.csv is keyed AugSept2026 and keeps its filename", () => {
-  const root = makeFixture({ CA: ["Crawl_Data_CA - AugSep2026.csv"] });
+test("buildManifest – AugSep2026.parquet is keyed AugSep2026 and keeps its filename", () => {
+  const root = makeFixture({ CA: ["Crawl_Data_CA - AugSep2026.parquet"] });
   try {
     const p = buildManifest(root).periodsByState.CA[0];
-    assert.equal(p.key, "AugSept2026");
-    assert.equal(p.file, "Crawl_Data_CA - AugSep2026.csv");
+    assert.equal(p.key, "AugSep2026");
+    assert.equal(p.file, "Crawl_Data_CA - AugSep2026.parquet");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("buildManifest – AugSep and AugSept in the same state are a duplicate", () => {
+test("buildManifest – September2025 and Sept2025 in the same state are a duplicate", () => {
   const root = makeFixture({
-    CA: ["Crawl_Data_CA - AugSep2026.csv", "Crawl_Data_CA - AugSept2026.csv"],
+    CA: ["Crawl_Data_CA - September2025.parquet", "Crawl_Data_CA - Sept2025.parquet"],
   });
   try {
-    assert.throws(() => buildManifest(root), /Duplicate period "AugSept2026" in CA/);
+    assert.throws(() => buildManifest(root), /Duplicate period "Sept2025" in CA/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -192,26 +198,85 @@ test("buildManifest – AugSep and AugSept in the same state are a duplicate", (
 
 test("buildManifest – supports the NJ_NY state folder and filenames", () => {
   const root = makeFixture({
-    CA: ["Crawl_Data_CA - May2025.csv"],
-    NJ_NY: ["Crawl_Data_NJ_NY - May2025.csv", "Crawl_Data_NJ_NY - AugSep2026.csv"],
+    CA: ["Crawl_Data_CA - May2025.parquet"],
+    NJ_NY: ["Crawl_Data_NJ_NY - May2025.parquet", "Crawl_Data_NJ_NY - AugSep2026.parquet"],
   });
   try {
     const m = buildManifest(root);
     assert.deepEqual(m.states, ["CA", "NJ_NY"]);
     assert.deepEqual(
       m.periodsByState.NJ_NY.map((p) => p.key),
-      ["May2025", "AugSept2026"],
+      ["May2025", "AugSep2026"],
     );
-    assert.equal(m.periodsByState.NJ_NY[0].file, "Crawl_Data_NJ_NY - May2025.csv");
+    assert.equal(m.periodsByState.NJ_NY[0].file, "Crawl_Data_NJ_NY - May2025.parquet");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("buildManifest – ignores files whose state prefix doesn't match the folder", () => {
-  const root = makeFixture({ NJ_NY: ["Crawl_Data_NJ - May2025.csv"] });
+  const root = makeFixture({ NJ_NY: ["Crawl_Data_NJ - May2025.parquet"] });
   try {
     assert.deepEqual(buildManifest(root).states, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+// ─── Raw CSV handling / helpers (parquet migration) ───────────────────────────
+
+test("buildManifest – ignores raw CSVs but warns how to convert them", () => {
+  const root = makeFixture({
+    CA: ["Crawl_Data_CA - May2025.parquet", "Crawl_Data_CA - Jun2025.csv"],
+  });
+  try {
+    const m = buildManifest(root);
+    assert.deepEqual(
+      m.periodsByState.CA.map((p) => p.key),
+      ["May2025"],
+    );
+    assert.equal(m.warnings.length, 1);
+    assert.match(m.warnings[0], /Jun2025\.csv is a raw CSV/);
+    assert.match(m.warnings[0], /npm run add-crawl/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("buildManifest – a raw CSV alone does not create a state", () => {
+  const root = makeFixture({ CA: ["Crawl_Data_CA - May2025.csv"] });
+  try {
+    assert.deepEqual(buildManifest(root).states, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("parseCrawlFilename – parses CSV and parquet names, rejects others", () => {
+  assert.deepEqual(parseCrawlFilename("Crawl_Data_CA - May2026.csv"), {
+    state: "CA",
+    period: "May2026",
+  });
+  assert.deepEqual(parseCrawlFilename("Crawl_Data_NJ_NY - AugSep2026.parquet", ".parquet"), {
+    state: "NJ_NY",
+    period: "AugSep2026",
+  });
+  assert.equal(parseCrawlFilename("Crawl_Data_CA - May2026.parquet"), null);
+  assert.equal(parseCrawlFilename("crawl_CA_May2026.csv"), null);
+});
+
+test("writeManifest – writes datasets.json and is idempotent", () => {
+  const root = makeFixture({ CA: ["Crawl_Data_CA - May2025.parquet"] });
+  const out = join(root, "out", "datasets.json");
+  const quiet = { warn() {} };
+  try {
+    const first = writeManifest({ publicDir: root, outFile: out, logger: quiet });
+    assert.deepEqual(first.states, ["CA"]);
+    const written = JSON.parse(readFileSync(out, "utf8"));
+    assert.equal(written.periodsByState.CA[0].file, "Crawl_Data_CA - May2025.parquet");
+    assert.equal("warnings" in written, false);
+    const before = readFileSync(out, "utf8");
+    writeManifest({ publicDir: root, outFile: out, logger: quiet });
+    assert.equal(readFileSync(out, "utf8"), before);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
