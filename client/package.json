@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-rsc": "^0.5.39",
-    "chart.js": "4.6.1",
+    "chart.js": "4.6.2",
     "chartjs-plugin-datalabels": "^2.2.0",
     "papaparse": "^5.7.1",
     "react": "^19.3.1",
